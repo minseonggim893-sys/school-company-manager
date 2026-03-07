@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.env
+.dev.vars
+*.log
+*.pid
+*.tar.gz
+*.zip
