@@ -57,6 +57,7 @@ async function initDB(db: D1Database) {
     dept TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'teacher',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
   await db.prepare(`CREATE TABLE IF NOT EXISTS sessions (
@@ -65,9 +66,17 @@ async function initDB(db: D1Database) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`).run()
+
+  // 기본 관리자 계정 자동 생성 (admin / admin1234)
+  const adminExists = await db.prepare(`SELECT id FROM users WHERE username = 'admin'`).first()
+  if (!adminExists) {
+    const hashed = await hashPassword('admin1234')
+    await db.prepare(`INSERT INTO users (name, dept, username, password, role) VALUES (?, ?, ?, ?, ?)`)
+      .bind('관리자', '관리부', 'admin', hashed, 'admin').run()
+  }
 }
 
-/* ── Authorization 헤더로 세션 인증 ── */
+/* ── 세션 인증 ── */
 async function getSessionUser(c: any) {
   const db: D1Database = c.env.DB
   const authHeader = c.req.header('Authorization') || ''
@@ -93,6 +102,7 @@ app.get('/', (c) => {
     .btn{display:inline-flex;align-items:center;justify-content:center;padding:6px 14px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;border:none;}
     .btn-primary{background:#1e40af;color:#fff;}.btn-primary:hover{background:#1d3a9e;}
     .btn-danger{background:#dc2626;color:#fff;}.btn-danger:hover{background:#b91c1c;}
+    .btn-success{background:#16a34a;color:#fff;}.btn-success:hover{background:#15803d;}
     .btn-outline{background:#fff;color:#374151;border:1px solid #d1d5db;}.btn-outline:hover{background:#f3f4f6;}
     .btn-sm{padding:4px 10px;font-size:13px;}
     .btn-active{background:#1e40af;color:#fff;}
@@ -109,11 +119,15 @@ app.get('/', (c) => {
     .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600;}
     .badge-취업{background:#dcfce7;color:#15803d;}
     .badge-현장실습{background:#fef9c3;color:#a16207;}
+    .badge-admin{background:#fef3c7;color:#d97706;}
+    .badge-teacher{background:#eff6ff;color:#1e40af;}
     .log-item{padding:8px 0;border-top:1px solid #f1f5f9;}
     .log-item:first-child{border-top:none;}
     .info-box{background:#f8fafc;padding:10px;border-radius:8px;}
     .info-label{font-size:11px;color:#94a3b8;margin-bottom:2px;}
     .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+    .tab-btn{padding:8px 20px;border:none;background:none;font-size:14px;font-weight:600;cursor:pointer;color:#64748b;border-bottom:2px solid transparent;}
+    .tab-btn.active{color:#1e40af;border-bottom:2px solid #1e40af;}
   </style>
 </head>
 <body>
@@ -126,7 +140,6 @@ app.get('/', (c) => {
 /* ════════════════════
    AUTH API
 ════════════════════ */
-
 app.post('/api/auth/register', async (c) => {
   const db = c.env.DB
   await initDB(db)
@@ -139,8 +152,8 @@ app.post('/api/auth/register', async (c) => {
   const exists = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first()
   if (exists) return c.json({ error: '이미 사용 중인 아이디입니다.' }, 409)
   const hashed = await hashPassword(password)
-  await db.prepare('INSERT INTO users (name, dept, username, password) VALUES (?, ?, ?, ?)')
-    .bind(name, dept, username, hashed).run()
+  await db.prepare('INSERT INTO users (name, dept, username, password, role) VALUES (?, ?, ?, ?, ?)')
+    .bind(name, dept, username, hashed, 'teacher').run()
   return c.json({ message: '회원가입이 완료되었습니다! 로그인하세요.' }, 201)
 })
 
@@ -158,15 +171,14 @@ app.post('/api/auth/login', async (c) => {
     return c.json({ error: '아이디 또는 비밀번호가 틀렸습니다.' }, 401)
   const sid = crypto.randomUUID()
   await db.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').bind(sid, user.id).run()
-  return c.json({ token: sid, user: { id: user.id, name: user.name, dept: user.dept } })
+  return c.json({ token: sid, user: { id: user.id, name: user.name, dept: user.dept, role: user.role } })
 })
 
 app.post('/api/auth/logout', async (c) => {
-  const db = c.env.DB
   const user = await getSessionUser(c)
   if (user) {
-    const authHeader = c.req.header('Authorization') || ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+    const db = c.env.DB
+    const token = (c.req.header('Authorization') || '').slice(7)
     if (token) await db.prepare('DELETE FROM sessions WHERE id = ?').bind(token).run()
   }
   return c.json({ message: '로그아웃 완료' })
@@ -177,13 +189,84 @@ app.get('/api/auth/me', async (c) => {
   await initDB(db)
   const user = await getSessionUser(c)
   if (!user) return c.json({ user: null })
-  return c.json({ user: { id: user.id, name: user.name, dept: user.dept } })
+  return c.json({ user: { id: user.id, name: user.name, dept: user.dept, role: user.role } })
+})
+
+/* ════════════════════
+   ADMIN API
+════════════════════ */
+
+// 전체 회원 목록
+app.get('/api/admin/users', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한이 필요합니다.' }, 403)
+  const users = await db.prepare(
+    `SELECT id, name, dept, username, role, created_at FROM users ORDER BY created_at DESC`
+  ).all()
+  return c.json({ users: users.results })
+})
+
+// 회원 삭제
+app.delete('/api/admin/users/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한이 필요합니다.' }, 403)
+  const id = c.req.param('id')
+  if (String(user.id) === String(id)) return c.json({ error: '자기 자신은 삭제할 수 없습니다.' }, 400)
+  await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run()
+  await db.prepare('DELETE FROM users WHERE id = ?').bind(id).run()
+  return c.json({ message: '회원이 삭제되었습니다.' })
+})
+
+// 회원 역할 변경
+app.put('/api/admin/users/:id/role', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한이 필요합니다.' }, 403)
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  const role = body.role === 'admin' ? 'admin' : 'teacher'
+  await db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(role, id).run()
+  return c.json({ message: '역할이 변경되었습니다.' })
+})
+
+// 비밀번호 초기화 (관리자)
+app.put('/api/admin/users/:id/reset-password', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한이 필요합니다.' }, 403)
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  if (!body.password || body.password.length < 4)
+    return c.json({ error: '비밀번호는 4자 이상이어야 합니다.' }, 400)
+  const hashed = await hashPassword(body.password)
+  await db.prepare('UPDATE users SET password = ? WHERE id = ?').bind(hashed, id).run()
+  return c.json({ message: '비밀번호가 초기화되었습니다.' })
+})
+
+// 전체 통계
+app.get('/api/admin/stats', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한이 필요합니다.' }, 403)
+  const [users, companies, contacts, histories] = await Promise.all([
+    db.prepare('SELECT COUNT(*) as cnt FROM users').first() as any,
+    db.prepare('SELECT COUNT(*) as cnt FROM companies').first() as any,
+    db.prepare('SELECT COUNT(*) as cnt FROM contact_logs').first() as any,
+    db.prepare('SELECT COUNT(*) as cnt FROM employment_histories').first() as any,
+  ])
+  return c.json({
+    users: (users as any)?.cnt ?? 0,
+    companies: (companies as any)?.cnt ?? 0,
+    contacts: (contacts as any)?.cnt ?? 0,
+    histories: (histories as any)?.cnt ?? 0,
+  })
 })
 
 /* ════════════════════
    COMPANY API
 ════════════════════ */
-
 app.get('/api/companies', async (c) => {
   const db = c.env.DB
   await initDB(db)
@@ -203,8 +286,7 @@ app.post('/api/companies', async (c) => {
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
   const body = await c.req.json() as any
-  if (!body.name || !body.name.trim())
-    return c.json({ error: '업체명을 입력해주세요.' }, 400)
+  if (!body.name?.trim()) return c.json({ error: '업체명을 입력해주세요.' }, 400)
   const res = await db.prepare('INSERT INTO companies (name, industry) VALUES (?, ?)')
     .bind(body.name.trim(), body.industry || null).run()
   const id = res.meta.last_row_id

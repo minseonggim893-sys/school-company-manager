@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "webapp",
+  "name": "school-company-manager",
   "compatibility_date": "2026-03-07",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
@@ -9,8 +9,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "webapp-production",
-      "database_id": "local-only"
+      "database_name": "school-company-manager-production",
+      "database_id": "4dd35801-38df-4c23-acf1-2c89a9e31bd1"
     }
   ]
 }
