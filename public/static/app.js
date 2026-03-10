@@ -195,26 +195,25 @@ function renderMain() {
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <input type="text" id="search-input" placeholder="업체명 검색" value="${esc(state.search)}"
           style="flex:1;min-width:180px;"
-          oninput="onSearch(this.value)"
-          oncompositionend="onSearch(this.value)" />
+          oninput="onSearch(this.value)" />
         <button class="btn btn-outline" onclick="clearSearch()">초기화</button>
         <button class="btn btn-primary" onclick="openAdd()">+ 업체 등록</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-sm ${state.filterDept==='전체'?'btn-active':'btn-outline'}" onclick="setDeptFilter('전체')">전체</button>
-        ${DEPARTMENTS.map(d=>`<button class="btn btn-sm ${state.filterDept===d?'btn-active':'btn-outline'}" onclick="setDeptFilter('${d}')">${d}</button>`).join('')}
+        <button class="btn btn-sm ${state.filterDept==='전체'?'btn-active':'btn-outline'} dept-filter-btn" data-dept="전체" onclick="setDeptFilter('전체')">전체</button>
+        ${DEPARTMENTS.map(d=>`<button class="btn btn-sm ${state.filterDept===d?'btn-active':'btn-outline'} dept-filter-btn" data-dept="${d}" onclick="setDeptFilter('${d}')">${d}</button>`).join('')}
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
       <div class="card" style="padding:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
           <span style="font-weight:700;font-size:15px;">업체 목록</span>
-          <span style="font-size:12px;color:#94a3b8;">총 ${filtered.length}개</span>
+          <span id="company-list-count" style="font-size:12px;color:#94a3b8;">총 ${filtered.length}개</span>
         </div>
         <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
           <table>
             <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일</th><th></th></tr></thead>
-            <tbody>
+            <tbody id="company-list-body">
               ${filtered.length===0
                 ?`<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
                 :filtered.map(c=>`
@@ -725,9 +724,47 @@ async function doLogout() {
 }
 
 /* ── 검색/필터 ── */
-function onSearch(v) { state.search=v; render(); }
-function clearSearch() { state.search=''; const el=document.getElementById('search-input'); if(el)el.value=''; render(); }
-function setDeptFilter(d) { state.filterDept=d; render(); }
+function onSearch(v) {
+  state.search = v;
+  renderListOnly(); // 목록만 부분 업데이트
+}
+function clearSearch() {
+  state.search = '';
+  const el = document.getElementById('search-input');
+  if (el) { el.value = ''; el.focus(); }
+  renderListOnly();
+}
+function setDeptFilter(d) { state.filterDept=d; renderListOnly(); }
+
+/* ── 목록만 부분 업데이트 (검색/필터용) ── */
+function renderListOnly() {
+  const listEl = document.getElementById('company-list-body');
+  const countEl = document.getElementById('company-list-count');
+  if (!listEl || !countEl) { render(); return; }
+  const filtered = getFiltered();
+  countEl.textContent = '총 ' + filtered.length + '개';
+  listEl.innerHTML = filtered.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
+    : filtered.map(c => `
+        <tr class="${state.selected?.id===c.id?'row-selected':''}" onclick="selectCompany(${c.id})">
+          <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
+          <td style="color:#64748b;">${esc(c.industry||'-')}</td>
+          <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
+          <td style="color:#94a3b8;white-space:nowrap;">${esc(c.last_contact||'-')}</td>
+          <td onclick="event.stopPropagation()">
+            <button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>
+          </td>
+        </tr>`).join('');
+  // 학과 필터 버튼 색상도 업데이트
+  document.querySelectorAll('.dept-filter-btn').forEach(btn => {
+    const d = btn.dataset.dept;
+    if (d === state.filterDept) {
+      btn.className = 'btn btn-sm btn-active dept-filter-btn';
+    } else {
+      btn.className = 'btn btn-sm btn-outline dept-filter-btn';
+    }
+  });
+}
 
 /* ── 업체 선택 ── */
 async function selectCompany(id) {
