@@ -19,6 +19,12 @@ async function initDB(db: D1Database) {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     industry TEXT,
+    address TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    manager_name TEXT DEFAULT '',
+    manager_phone TEXT DEFAULT '',
+    manager_email TEXT DEFAULT '',
+    memo TEXT DEFAULT '',
     last_contact TEXT DEFAULT '-',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
@@ -67,6 +73,19 @@ async function initDB(db: D1Database) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`).run()
 
+  // 컬럼 추가 (이미 있으면 무시)
+  const colsToAdd = [
+    `ALTER TABLE companies ADD COLUMN address TEXT DEFAULT ''`,
+    `ALTER TABLE companies ADD COLUMN phone TEXT DEFAULT ''`,
+    `ALTER TABLE companies ADD COLUMN manager_name TEXT DEFAULT ''`,
+    `ALTER TABLE companies ADD COLUMN manager_phone TEXT DEFAULT ''`,
+    `ALTER TABLE companies ADD COLUMN manager_email TEXT DEFAULT ''`,
+    `ALTER TABLE companies ADD COLUMN memo TEXT DEFAULT ''`,
+  ]
+  for (const sql of colsToAdd) {
+    try { await db.prepare(sql).run() } catch {}
+  }
+
   // 기본 관리자 계정 자동 생성 (admin / admin1234)
   const adminExists = await db.prepare(`SELECT id FROM users WHERE username = 'admin'`).first()
   if (!adminExists) {
@@ -104,6 +123,7 @@ app.get('/', (c) => {
     .btn-danger{background:#dc2626;color:#fff;}.btn-danger:hover{background:#b91c1c;}
     .btn-success{background:#16a34a;color:#fff;}.btn-success:hover{background:#15803d;}
     .btn-outline{background:#fff;color:#374151;border:1px solid #d1d5db;}.btn-outline:hover{background:#f3f4f6;}
+    .btn-warning{background:#d97706;color:#fff;}.btn-warning:hover{background:#b45309;}
     .btn-sm{padding:4px 10px;font-size:13px;}
     .btn-active{background:#1e40af;color:#fff;}
     .card{background:#fff;border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:20px;}
@@ -195,8 +215,6 @@ app.get('/api/auth/me', async (c) => {
 /* ════════════════════
    ADMIN API
 ════════════════════ */
-
-// 전체 회원 목록
 app.get('/api/admin/users', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -207,7 +225,6 @@ app.get('/api/admin/users', async (c) => {
   return c.json({ users: users.results })
 })
 
-// 회원 삭제
 app.delete('/api/admin/users/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -219,7 +236,6 @@ app.delete('/api/admin/users/:id', async (c) => {
   return c.json({ message: '회원이 삭제되었습니다.' })
 })
 
-// 회원 역할 변경
 app.put('/api/admin/users/:id/role', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -231,7 +247,6 @@ app.put('/api/admin/users/:id/role', async (c) => {
   return c.json({ message: '역할이 변경되었습니다.' })
 })
 
-// 비밀번호 초기화 (관리자)
 app.put('/api/admin/users/:id/reset-password', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -245,7 +260,6 @@ app.put('/api/admin/users/:id/reset-password', async (c) => {
   return c.json({ message: '비밀번호가 초기화되었습니다.' })
 })
 
-// 전체 통계
 app.get('/api/admin/stats', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -287,8 +301,18 @@ app.post('/api/companies', async (c) => {
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
   const body = await c.req.json() as any
   if (!body.name?.trim()) return c.json({ error: '업체명을 입력해주세요.' }, 400)
-  const res = await db.prepare('INSERT INTO companies (name, industry) VALUES (?, ?)')
-    .bind(body.name.trim(), body.industry || null).run()
+  const res = await db.prepare(
+    'INSERT INTO companies (name, industry, address, phone, manager_name, manager_phone, manager_email, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(
+    body.name.trim(),
+    body.industry || '',
+    body.address || '',
+    body.phone || '',
+    body.manager_name || '',
+    body.manager_phone || '',
+    body.manager_email || '',
+    body.memo || ''
+  ).run()
   const id = res.meta.last_row_id
   if (Array.isArray(body.departments)) {
     for (const dept of body.departments) {
@@ -297,6 +321,41 @@ app.post('/api/companies', async (c) => {
     }
   }
   return c.json({ id, message: '업체가 등록되었습니다.' }, 201)
+})
+
+// 업체 수정
+app.put('/api/companies/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  if (!body.name?.trim()) return c.json({ error: '업체명을 입력해주세요.' }, 400)
+  await db.prepare(`
+    UPDATE companies SET
+      name = ?, industry = ?, address = ?, phone = ?,
+      manager_name = ?, manager_phone = ?, manager_email = ?, memo = ?
+    WHERE id = ?
+  `).bind(
+    body.name.trim(),
+    body.industry || '',
+    body.address || '',
+    body.phone || '',
+    body.manager_name || '',
+    body.manager_phone || '',
+    body.manager_email || '',
+    body.memo || '',
+    id
+  ).run()
+  // 학과 업데이트
+  await db.prepare('DELETE FROM company_departments WHERE company_id = ?').bind(id).run()
+  if (Array.isArray(body.departments)) {
+    for (const dept of body.departments) {
+      await db.prepare('INSERT OR IGNORE INTO company_departments (company_id, department) VALUES (?, ?)')
+        .bind(id, dept).run()
+    }
+  }
+  return c.json({ message: '업체 정보가 수정되었습니다.' })
 })
 
 app.delete('/api/companies/:id', async (c) => {
@@ -311,6 +370,7 @@ app.delete('/api/companies/:id', async (c) => {
   return c.json({ message: '업체가 삭제되었습니다.' })
 })
 
+/* ── 연락 이력 ── */
 app.get('/api/companies/:id/contacts', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -335,6 +395,30 @@ app.post('/api/companies/:id/contacts', async (c) => {
   return c.json({ message: '연락 이력 추가됨' }, 201)
 })
 
+// 연락 이력 수정
+app.put('/api/contacts/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  await db.prepare(
+    'UPDATE contact_logs SET date = ?, method = ?, content = ? WHERE id = ?'
+  ).bind(body.date, body.method || '전화', body.content || '', id).run()
+  return c.json({ message: '연락 이력이 수정되었습니다.' })
+})
+
+// 연락 이력 삭제
+app.delete('/api/contacts/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const id = c.req.param('id')
+  await db.prepare('DELETE FROM contact_logs WHERE id = ?').bind(id).run()
+  return c.json({ message: '연락 이력이 삭제되었습니다.' })
+})
+
+/* ── 취업/실습 이력 ── */
 app.get('/api/companies/:id/histories', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
@@ -356,6 +440,29 @@ app.post('/api/companies/:id/histories', async (c) => {
     'INSERT INTO employment_histories (company_id, year, department, student, type, writer) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(id, body.year || '', body.department || '', body.student || '', body.type || '취업', body.writer || '').run()
   return c.json({ message: '이력 추가됨' }, 201)
+})
+
+// 취업/실습 이력 수정
+app.put('/api/histories/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  await db.prepare(
+    'UPDATE employment_histories SET year = ?, department = ?, student = ?, type = ? WHERE id = ?'
+  ).bind(body.year || '', body.department || '', body.student || '', body.type || '취업', id).run()
+  return c.json({ message: '이력이 수정되었습니다.' })
+})
+
+// 취업/실습 이력 삭제
+app.delete('/api/histories/:id', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const id = c.req.param('id')
+  await db.prepare('DELETE FROM employment_histories WHERE id = ?').bind(id).run()
+  return c.json({ message: '이력이 삭제되었습니다.' })
 })
 
 export default app

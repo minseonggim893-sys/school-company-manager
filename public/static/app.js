@@ -9,34 +9,49 @@ let state = {
   user: null,
   authMode: 'login',
   authError: '', authSuccess: '',
-  page: 'main',        // 'main' | 'admin'
-  adminTab: 'users',   // 'users' | 'stats'
+  page: 'main',
+  adminTab: 'users',
   adminUsers: [],
   adminStats: null,
   adminError: '',
-  resetTarget: null,   // { id, name }
+  resetTarget: null,
   resetPw: '',
   showResetModal: false,
   companies: [],
   selected: null,
-  search: '', filterDept: '전체',
-  contactLogs: {}, histories: {},
-  showAdd: false, showContactAdd: false, showHistoryAdd: false, showDeleteConfirm: false,
+  search: '',
+  filterDept: '전체',
+  contactLogs: {},
+  histories: {},
+  // 모달 상태
+  showAdd: false,
+  showEditCompany: false,
+  showContactAdd: false,
+  showContactEdit: false,
+  showHistoryAdd: false,
+  showHistoryEdit: false,
+  showDeleteConfirm: false,
   deleteTarget: null,
-  newCompany: { name: '', industry: '', departments: [] },
-  newLog: { date: '', method: '전화', content: '' },
-  newHistory: { year: '', department: '', student: '', type: '취업' },
+  editContactTarget: null,
+  editHistoryTarget: null,
+  // 폼 데이터
+  newCompany: { name:'', industry:'', address:'', phone:'', manager_name:'', manager_phone:'', manager_email:'', memo:'', departments:[] },
+  editCompany: { id:null, name:'', industry:'', address:'', phone:'', manager_name:'', manager_phone:'', manager_email:'', memo:'', departments:[] },
+  newLog: { date:'', method:'전화', content:'' },
+  editLog: { id:null, date:'', method:'전화', content:'' },
+  newHistory: { year:'', department:'', student:'', type:'취업' },
+  editHistory: { id:null, year:'', department:'', student:'', type:'취업' },
   duplicateMsg: ''
 };
 
 /* ── 토큰 ── */
-function saveToken(t) { t ? localStorage.setItem('auth_token', t) : localStorage.removeItem('auth_token'); }
+function saveToken(t) { t ? localStorage.setItem('auth_token',t) : localStorage.removeItem('auth_token'); }
 function getToken() { return localStorage.getItem('auth_token') || ''; }
 
 /* ── API ── */
 async function api(method, path, body) {
   const token = getToken();
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type':'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
@@ -77,6 +92,7 @@ function esc(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
 function getFiltered() {
   return state.companies.filter(c => {
     const mS = !state.search || c.name.toLowerCase().includes(state.search.toLowerCase());
@@ -167,18 +183,20 @@ function renderHeader() {
   </div>`;
 }
 
-/* ── 메인(업체관리) 페이지 ── */
+/* ── 메인 페이지 ── */
 function renderMain() {
   if (state.page === 'admin') return renderAdminPage();
   const filtered = getFiltered();
   const sel = state.selected;
   return `
-  <div style="max-width:1200px;margin:0 auto;padding:24px 16px;display:grid;gap:20px;">
+  <div style="max-width:1300px;margin:0 auto;padding:24px 16px;display:grid;gap:20px;">
     ${renderHeader()}
     <div class="card" style="padding:16px;display:grid;gap:12px;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <input type="text" placeholder="업체명 검색" value="${esc(state.search)}"
-          style="flex:1;min-width:180px;" oninput="onSearch(this.value)" />
+        <input type="text" id="search-input" placeholder="업체명 검색" value="${esc(state.search)}"
+          style="flex:1;min-width:180px;"
+          oninput="onSearch(this.value)"
+          oncompositionend="onSearch(this.value)" />
         <button class="btn btn-outline" onclick="clearSearch()">초기화</button>
         <button class="btn btn-primary" onclick="openAdd()">+ 업체 등록</button>
       </div>
@@ -213,17 +231,384 @@ function renderMain() {
           </table>
         </div>
       </div>
-      <div class="card" style="padding:16px;">
+      <div class="card" style="padding:16px;overflow-y:auto;max-height:700px;">
         <span style="font-weight:700;font-size:15px;">업체 상세</span>
         ${!sel?`<p style="font-size:13px;color:#94a3b8;margin-top:8px;">업체를 선택하세요.</p>`:renderDetail(sel)}
       </div>
     </div>
-    ${state.showAdd?renderAddPanel():''}
-    ${state.showContactAdd&&sel?renderContactAddPanel():''}
-    ${state.showHistoryAdd&&sel?renderHistoryAddPanel():''}
   </div>
+  ${state.showAdd?renderAddModal():''}
+  ${state.showEditCompany?renderEditCompanyModal():''}
+  ${state.showContactAdd&&sel?renderContactAddModal():''}
+  ${state.showContactEdit?renderContactEditModal():''}
+  ${state.showHistoryAdd&&sel?renderHistoryAddModal():''}
+  ${state.showHistoryEdit?renderHistoryEditModal():''}
   ${state.showDeleteConfirm?renderDeleteModal():''}
   ${state.showResetModal?renderResetModal():''}`;
+}
+
+/* ── 업체 상세 ── */
+function renderDetail(c) {
+  const logs = state.contactLogs[c.id] || [];
+  const hists = state.histories[c.id] || [];
+  return `
+  <div style="margin-top:12px;display:grid;gap:14px;">
+    <!-- 업체 기본정보 -->
+    <div style="background:#f8fafc;border-radius:10px;padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">🏢 기본 정보</span>
+        <button class="btn btn-sm btn-warning" onclick="openEditCompany(${c.id})">✏️ 수정</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><div class="info-label">업체명</div><div style="font-weight:600;font-size:14px;">${esc(c.name)}</div></div>
+        <div><div class="info-label">업종</div><div style="font-size:14px;">${esc(c.industry||'-')}</div></div>
+        <div style="grid-column:1/-1;"><div class="info-label">주소</div><div style="font-size:14px;">${esc(c.address||'-')}</div></div>
+        <div><div class="info-label">회사 전화</div><div style="font-size:14px;">${esc(c.phone||'-')}</div></div>
+        <div><div class="info-label">담당자 이름</div><div style="font-size:14px;">${esc(c.manager_name||'-')}</div></div>
+        <div><div class="info-label">담당자 연락처</div><div style="font-size:14px;">${esc(c.manager_phone||'-')}</div></div>
+        <div><div class="info-label">담당자 이메일</div><div style="font-size:14px;">${esc(c.manager_email||'-')}</div></div>
+        <div style="grid-column:1/-1;"><div class="info-label">관련 학과</div><div style="font-size:14px;">${(c.departments||[]).map(d=>`<span class="tag">${esc(d)}</span>`).join('')||'-'}</div></div>
+        ${c.memo?`<div style="grid-column:1/-1;"><div class="info-label">메모</div><div style="font-size:13px;color:#64748b;">${esc(c.memo)}</div></div>`:''}
+      </div>
+    </div>
+
+    <!-- 연락 이력 -->
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">📞 연락 이력</span>
+        <button class="btn btn-sm btn-primary" onclick="openContactAdd()">+ 추가</button>
+      </div>
+      ${logs.length===0
+        ?`<p style="font-size:13px;color:#94a3b8;">연락 이력이 없습니다.</p>`
+        :logs.map(l=>`
+          <div class="log-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;">
+                  <span style="font-size:12px;color:#94a3b8;">${esc(l.date)}</span>
+                  <span class="tag" style="font-size:11px;padding:1px 7px;">${esc(l.method)}</span>
+                  ${l.writer?`<span style="font-size:12px;color:#64748b;">${esc(l.writer)}</span>`:''}
+                </div>
+                <div style="font-size:13px;color:#374151;white-space:pre-wrap;">${esc(l.content)}</div>
+              </div>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button class="btn btn-sm btn-warning" style="padding:2px 7px;font-size:11px;"
+                  onclick="openContactEdit(${l.id},'${esc(l.date)}','${esc(l.method)}',\`${esc(l.content)}\`)">✏️</button>
+                <button class="btn btn-sm btn-danger" style="padding:2px 7px;font-size:11px;"
+                  onclick="deleteContact(${l.id})">🗑</button>
+              </div>
+            </div>
+          </div>`).join('')}
+    </div>
+
+    <!-- 취업/실습 이력 -->
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">🎓 취업/실습 이력</span>
+        <button class="btn btn-sm btn-primary" onclick="openHistoryAdd()">+ 추가</button>
+      </div>
+      ${hists.length===0
+        ?`<p style="font-size:13px;color:#94a3b8;">취업/실습 이력이 없습니다.</p>`
+        :hists.map(h=>`
+          <div class="log-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                  <span class="badge badge-${h.type||'취업'}">${esc(h.type||'취업')}</span>
+                  <span style="font-size:13px;font-weight:600;">${esc(h.year||'-')}년</span>
+                  <span style="font-size:13px;color:#374151;">${esc(h.department||'-')}</span>
+                  <span style="font-size:13px;color:#64748b;">${esc(h.student||'-')}</span>
+                  ${h.writer?`<span style="font-size:12px;color:#94a3b8;">(작성: ${esc(h.writer)})</span>`:''}
+                </div>
+              </div>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button class="btn btn-sm btn-warning" style="padding:2px 7px;font-size:11px;"
+                  onclick="openHistoryEdit(${h.id},'${esc(h.year)}','${esc(h.department)}','${esc(h.student)}','${esc(h.type)}')">✏️</button>
+                <button class="btn btn-sm btn-danger" style="padding:2px 7px;font-size:11px;"
+                  onclick="deleteHistory(${h.id})">🗑</button>
+              </div>
+            </div>
+          </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* ── 업체 등록 모달 ── */
+function renderAddModal() {
+  const nc = state.newCompany;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeAdd()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">🏢 업체 등록</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">업체명 *</label>
+            <input type="text" placeholder="업체명" value="${esc(nc.name)}"
+              oninput="updateNew('name',this.value)" onblur="checkDuplicate(this.value)" />
+            ${state.duplicateMsg?`<p style="font-size:12px;color:#dc2626;margin:3px 0 0;">${esc(state.duplicateMsg)}</p>`:''}
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">업종</label>
+            <input type="text" placeholder="예: IT, 제조업" value="${esc(nc.industry)}" oninput="updateNew('industry',this.value)" />
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">주소</label>
+          <input type="text" placeholder="회사 주소" value="${esc(nc.address)}" oninput="updateNew('address',this.value)" />
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">회사 전화</label>
+          <input type="text" placeholder="02-1234-5678" value="${esc(nc.phone)}" oninput="updateNew('phone',this.value)" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 이름</label>
+            <input type="text" placeholder="홍길동" value="${esc(nc.manager_name)}" oninput="updateNew('manager_name',this.value)" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 연락처</label>
+            <input type="text" placeholder="010-1234-5678" value="${esc(nc.manager_phone)}" oninput="updateNew('manager_phone',this.value)" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 이메일</label>
+            <input type="text" placeholder="hong@company.com" value="${esc(nc.manager_email)}" oninput="updateNew('manager_email',this.value)" />
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">메모</label>
+          <textarea rows="2" placeholder="특이사항, 메모" oninput="updateNew('memo',this.value)">${esc(nc.memo)}</textarea>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">관련 학과</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${DEPARTMENTS.map(d=>`
+              <button type="button" class="btn btn-sm ${nc.departments.includes(d)?'btn-active':'btn-outline'}"
+                onclick="toggleNewDept('${d}')">${d}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeAdd()">취소</button>
+        <button class="btn btn-primary" onclick="submitAdd()">등록</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 업체 수정 모달 ── */
+function renderEditCompanyModal() {
+  const ec = state.editCompany;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeEditCompany()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">✏️ 업체 정보 수정</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">업체명 *</label>
+            <input type="text" placeholder="업체명" value="${esc(ec.name)}" oninput="updateEdit('name',this.value)" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">업종</label>
+            <input type="text" placeholder="예: IT, 제조업" value="${esc(ec.industry)}" oninput="updateEdit('industry',this.value)" />
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">주소</label>
+          <input type="text" placeholder="회사 주소" value="${esc(ec.address)}" oninput="updateEdit('address',this.value)" />
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">회사 전화</label>
+          <input type="text" placeholder="02-1234-5678" value="${esc(ec.phone)}" oninput="updateEdit('phone',this.value)" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 이름</label>
+            <input type="text" placeholder="홍길동" value="${esc(ec.manager_name)}" oninput="updateEdit('manager_name',this.value)" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 연락처</label>
+            <input type="text" placeholder="010-1234-5678" value="${esc(ec.manager_phone)}" oninput="updateEdit('manager_phone',this.value)" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당자 이메일</label>
+            <input type="text" placeholder="hong@company.com" value="${esc(ec.manager_email)}" oninput="updateEdit('manager_email',this.value)" />
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">메모</label>
+          <textarea rows="2" placeholder="특이사항, 메모" oninput="updateEdit('memo',this.value)">${esc(ec.memo)}</textarea>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">관련 학과</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${DEPARTMENTS.map(d=>`
+              <button type="button" class="btn btn-sm ${ec.departments.includes(d)?'btn-active':'btn-outline'}"
+                onclick="toggleEditDept('${d}')">${d}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeEditCompany()">취소</button>
+        <button class="btn btn-primary" onclick="submitEditCompany()">저장</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 연락이력 추가 모달 ── */
+function renderContactAddModal() {
+  const l = state.newLog;
+  const today = new Date().toISOString().slice(0,10);
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeContactAdd()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:440px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">📞 연락 이력 추가</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">날짜 *</label>
+            <input type="date" value="${l.date||today}" oninput="state.newLog.date=this.value" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">방법</label>
+            <select onchange="state.newLog.method=this.value">
+              ${['전화','방문','이메일','문자','기타'].map(m=>`<option value="${m}" ${l.method===m?'selected':''}>${m}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">내용</label>
+          <textarea rows="3" placeholder="연락 내용을 입력하세요" oninput="state.newLog.content=this.value">${esc(l.content)}</textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeContactAdd()">취소</button>
+        <button class="btn btn-primary" onclick="submitContactAdd()">추가</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 연락이력 수정 모달 ── */
+function renderContactEditModal() {
+  const l = state.editLog;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeContactEdit()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:440px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">✏️ 연락 이력 수정</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">날짜 *</label>
+            <input type="date" value="${esc(l.date)}" oninput="state.editLog.date=this.value" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">방법</label>
+            <select onchange="state.editLog.method=this.value">
+              ${['전화','방문','이메일','문자','기타'].map(m=>`<option value="${m}" ${l.method===m?'selected':''}>${m}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">내용</label>
+          <textarea rows="3" placeholder="연락 내용을 입력하세요" oninput="state.editLog.content=this.value">${esc(l.content)}</textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeContactEdit()">취소</button>
+        <button class="btn btn-primary" onclick="submitContactEdit()">저장</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 취업/실습 이력 추가 모달 ── */
+function renderHistoryAddModal() {
+  const h = state.newHistory;
+  const curYear = new Date().getFullYear();
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeHistoryAdd()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:440px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">🎓 취업/실습 이력 추가</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">연도 *</label>
+            <input type="number" placeholder="${curYear}" value="${esc(h.year)}" oninput="state.newHistory.year=this.value" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">구분</label>
+            <select onchange="state.newHistory.type=this.value">
+              ${['취업','현장실습'].map(t=>`<option value="${t}" ${h.type===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학과</label>
+          <select onchange="state.newHistory.department=this.value">
+            <option value="">학과 선택</option>
+            ${DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학생 이름</label>
+          <input type="text" placeholder="홍길동" value="${esc(h.student)}" oninput="state.newHistory.student=this.value" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeHistoryAdd()">취소</button>
+        <button class="btn btn-primary" onclick="submitHistoryAdd()">추가</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 취업/실습 이력 수정 모달 ── */
+function renderHistoryEditModal() {
+  const h = state.editHistory;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeHistoryEdit()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:440px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">✏️ 취업/실습 이력 수정</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">연도 *</label>
+            <input type="number" placeholder="연도" value="${esc(h.year)}" oninput="state.editHistory.year=this.value" />
+          </div>
+          <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">구분</label>
+            <select onchange="state.editHistory.type=this.value">
+              ${['취업','현장실습'].map(t=>`<option value="${t}" ${h.type===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학과</label>
+          <select onchange="state.editHistory.department=this.value">
+            <option value="">학과 선택</option>
+            ${DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학생 이름</label>
+          <input type="text" placeholder="홍길동" value="${esc(h.student)}" oninput="state.editHistory.student=this.value" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeHistoryEdit()">취소</button>
+        <button class="btn btn-primary" onclick="submitHistoryEdit()">저장</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 삭제 확인 모달 ── */
+function renderDeleteModal() {
+  const t = state.deleteTarget;
+  return `
+  <div class="modal-bg">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:380px;text-align:center;">
+      <div style="font-size:40px;margin-bottom:12px;">⚠️</div>
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 8px;">업체 삭제</h3>
+      <p style="font-size:14px;color:#64748b;margin-bottom:24px;">
+        <strong style="color:#1e293b;">${esc(t?.name)}</strong> 업체를 삭제하시겠습니까?<br/>
+        <span style="font-size:12px;color:#dc2626;">연락이력과 취업/실습이력이 모두 삭제됩니다.</span>
+      </p>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button class="btn btn-outline" onclick="closeDeleteConfirm()">취소</button>
+        <button class="btn btn-danger" onclick="confirmDelete()">삭제</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 비밀번호 초기화 모달 ── */
+function renderResetModal() {
+  return `
+  <div class="modal-bg">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:380px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 16px;">🔑 비밀번호 초기화</h3>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px;"><strong>${esc(state.resetTarget?.name)}</strong>의 비밀번호를 초기화합니다.</p>
+      <input type="password" placeholder="새 비밀번호 (4자 이상)" oninput="state.resetPw=this.value" style="margin-bottom:16px;" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeResetModal()">취소</button>
+        <button class="btn btn-primary" onclick="submitResetPassword()">초기화</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 /* ── 관리자 페이지 ── */
@@ -232,15 +617,11 @@ function renderAdminPage() {
   return `
   <div style="max-width:1100px;margin:0 auto;padding:24px 16px;display:grid;gap:20px;">
     ${renderHeader()}
-
-    <!-- 탭 -->
     <div style="display:flex;border-bottom:2px solid #e5e7eb;gap:4px;">
       <button class="tab-btn ${state.adminTab==='stats'?'active':''}" onclick="setAdminTab('stats')">📊 통계</button>
       <button class="tab-btn ${state.adminTab==='users'?'active':''}" onclick="setAdminTab('users')">👥 회원 관리</button>
     </div>
-
     ${state.adminError?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:11px 14px;font-size:13px;color:#b91c1c;">⚠️ ${esc(state.adminError)}</div>`:''}
-
     ${state.adminTab==='stats'?renderAdminStats(stats):renderAdminUsers()}
   </div>
   ${state.showResetModal?renderResetModal():''}`;
@@ -249,10 +630,10 @@ function renderAdminPage() {
 function renderAdminStats(s) {
   if (!s) return `<div class="card"><p style="color:#94a3b8;font-size:14px;">통계 로딩 중...</p></div>`;
   const items = [
-    { icon:'👥', label:'전체 회원', val: s.users, color:'#eff6ff', tc:'#1e40af' },
-    { icon:'🏢', label:'등록 업체', val: s.companies, color:'#f0fdf4', tc:'#15803d' },
-    { icon:'📞', label:'연락 이력', val: s.contacts, color:'#fef9c3', tc:'#a16207' },
-    { icon:'🎓', label:'취업/실습 이력', val: s.histories, color:'#fdf4ff', tc:'#9333ea' },
+    { icon:'👥', label:'전체 회원', val:s.users, color:'#eff6ff', tc:'#1e40af' },
+    { icon:'🏢', label:'등록 업체', val:s.companies, color:'#f0fdf4', tc:'#15803d' },
+    { icon:'📞', label:'연락 이력', val:s.contacts, color:'#fef9c3', tc:'#a16207' },
+    { icon:'🎓', label:'취업/실습 이력', val:s.histories, color:'#fdf4ff', tc:'#9333ea' },
   ];
   return `
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
@@ -288,14 +669,10 @@ function renderAdminUsers() {
                 <td style="color:#94a3b8;font-size:13px;">${esc((u.created_at||'').slice(0,10))}</td>
                 <td>
                   <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                    <button class="btn btn-sm btn-outline" style="font-size:12px;"
-                      onclick="toggleRole(${u.id},'${u.role}')">
-                      ${u.role==='admin'?'교사로 변경':'관리자 지정'}
-                    </button>
-                    <button class="btn btn-sm btn-outline" style="font-size:12px;"
-                      onclick="openResetModal(${u.id},'${esc(u.name)}')">🔑 비번초기화</button>
-                    <button class="btn btn-sm btn-danger" style="font-size:12px;"
-                      onclick="deleteUser(${u.id},'${esc(u.name)}')">🗑 삭제</button>
+                    <button class="btn btn-sm btn-outline" style="font-size:12px;" onclick="toggleRole(${u.id},'${u.role}')">
+                      ${u.role==='admin'?'교사로 변경':'관리자 지정'}</button>
+                    <button class="btn btn-sm btn-outline" style="font-size:12px;" onclick="openResetModal(${u.id},'${esc(u.name)}')">🔑 비번초기화</button>
+                    <button class="btn btn-sm btn-danger" style="font-size:12px;" onclick="deleteUser(${u.id},'${esc(u.name)}')">🗑 삭제</button>
                   </div>
                 </td>
               </tr>`).join('')}
@@ -305,285 +682,269 @@ function renderAdminUsers() {
   </div>`;
 }
 
-function renderResetModal() {
-  const t = state.resetTarget;
-  return `
-  <div class="modal-bg" onclick="closeResetModal()">
-    <div style="background:#fff;border-radius:18px;padding:28px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);" onclick="event.stopPropagation()">
-      <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;">🔑 비밀번호 초기화</h3>
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px;"><b>${esc(t?.name)}</b> 님의 새 비밀번호를 입력하세요.</p>
-      <input type="password" id="reset-pw-input" placeholder="새 비밀번호 (4자 이상)" style="margin-bottom:16px;"
-        oninput="state.resetPw=this.value" />
-      <div style="display:flex;gap:10px;">
-        <button class="btn btn-outline" style="flex:1;" onclick="closeResetModal()">취소</button>
-        <button class="btn btn-primary" style="flex:1;" onclick="confirmResetPassword()">변경</button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderDetail(sel) {
-  const logs = state.contactLogs[sel.id]||[];
-  const hists = state.histories[sel.id]||[];
-  return `
-  <div style="display:grid;gap:10px;font-size:14px;margin-top:10px;">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <div class="info-box"><p class="info-label">업체명</p><p style="font-weight:700;">${esc(sel.name)}</p></div>
-      <div class="info-box"><p class="info-label">업종</p><p>${esc(sel.industry||'-')}</p></div>
-    </div>
-    <div class="info-box"><p class="info-label">관련 학과</p>
-      <div>${(sel.departments||[]).map(d=>`<span class="tag">${esc(d)}</span>`).join(' ')||'-'}</div>
-    </div>
-    <div class="info-box"><p class="info-label">최근 연락일</p><p>${esc(sel.last_contact||'-')}</p></div>
-    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-weight:600;font-size:13px;">📞 연락 이력</span>
-        <button class="btn btn-outline btn-sm" onclick="openContactAdd()">이력 추가</button>
-      </div>
-      ${!logs.length?`<p style="font-size:13px;color:#94a3b8;">기록 없음</p>`:
-        logs.map(l=>`<div class="log-item">
-          <p style="font-weight:600;color:#1e293b;">${esc(l.date)} · ${esc(l.method)}</p>
-          <p style="color:#475569;margin:2px 0;">${esc(l.content||'')}</p>
-          <p style="font-size:12px;color:#94a3b8;">${esc(l.writer)} (${esc(l.dept)})</p>
-        </div>`).join('')}
-    </div>
-    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-weight:600;font-size:13px;">🎓 취업 / 실습 이력</span>
-        <button class="btn btn-outline btn-sm" onclick="openHistoryAdd()">기록 추가</button>
-      </div>
-      ${!hists.length?`<p style="font-size:13px;color:#94a3b8;">기록 없음</p>`:
-        hists.map(h=>`<div class="log-item">
-          <p style="font-weight:600;color:#1e293b;">${esc(h.year)} · ${esc(h.department)}</p>
-          <p style="color:#475569;margin:2px 0;">${esc(h.student)} · <span class="badge badge-${esc(h.type)}">${esc(h.type)}</span></p>
-          <p style="font-size:12px;color:#94a3b8;">기록자: ${esc(h.writer)}</p>
-        </div>`).join('')}
-    </div>
-  </div>`;
-}
-
-function renderAddPanel() {
-  const nc = state.newCompany;
-  return `
-  <div class="card" style="padding:20px;display:grid;gap:14px;">
-    <h2 style="font-weight:700;font-size:15px;">신규 업체 등록</h2>
-    <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;color:#475569;">
-      업체명 기준으로 중복 확인 후 등록합니다.
-    </div>
-    <input type="text" placeholder="업체명" value="${esc(nc.name)}" oninput="updateField('newCompany','name',this.value)" />
-    ${state.duplicateMsg?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:13px;color:#b91c1c;">${esc(state.duplicateMsg)}</div>`:''}
-    <input type="text" placeholder="업종" value="${esc(nc.industry)}" oninput="updateField('newCompany','industry',this.value)" />
-    <div>
-      <p style="font-size:13px;font-weight:600;margin-bottom:8px;">관련 학과 선택</p>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${DEPARTMENTS.map(d=>`<button class="btn btn-sm ${nc.departments.includes(d)?'btn-active':'btn-outline'}" onclick="toggleDept('${d}')">${d}</button>`).join('')}
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" onclick="addCompany()">등록</button>
-      <button class="btn btn-outline" onclick="closeAdd()">취소</button>
-    </div>
-  </div>`;
-}
-
-function renderContactAddPanel() {
-  const nl = state.newLog;
-  return `
-  <div class="card" style="padding:20px;display:grid;gap:14px;">
-    <h2 style="font-weight:700;font-size:15px;">연락 이력 추가</h2>
-    <p style="font-size:13px;color:#64748b;">작성자: <b>${esc(state.user.name)}</b> (${esc(state.user.dept)})</p>
-    <input type="date" value="${esc(nl.date)}" onchange="updateField('newLog','date',this.value)" />
-    <select onchange="updateField('newLog','method',this.value)">
-      ${['전화','방문','이메일','문자','기타'].map(m=>`<option ${nl.method===m?'selected':''}>${m}</option>`).join('')}
-    </select>
-    <input type="text" placeholder="연락 내용" value="${esc(nl.content)}" oninput="updateField('newLog','content',this.value)" />
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" onclick="addContactLog()">저장</button>
-      <button class="btn btn-outline" onclick="closeContactAdd()">취소</button>
-    </div>
-  </div>`;
-}
-
-function renderHistoryAddPanel() {
-  const nh = state.newHistory;
-  return `
-  <div class="card" style="padding:20px;display:grid;gap:14px;">
-    <h2 style="font-weight:700;font-size:15px;">취업 / 실습 기록 추가</h2>
-    <p style="font-size:13px;color:#64748b;">기록자: <b>${esc(state.user.name)}</b></p>
-    <input type="text" placeholder="연도 (예: 2026)" value="${esc(nh.year)}" oninput="updateField('newHistory','year',this.value)" />
-    <input type="text" placeholder="학과" value="${esc(nh.department)}" oninput="updateField('newHistory','department',this.value)" />
-    <input type="text" placeholder="학생 이름" value="${esc(nh.student)}" oninput="updateField('newHistory','student',this.value)" />
-    <select onchange="updateField('newHistory','type',this.value)">
-      ${['취업','현장실습'].map(t=>`<option ${nh.type===t?'selected':''}>${t}</option>`).join('')}
-    </select>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" onclick="addHistory()">저장</button>
-      <button class="btn btn-outline" onclick="closeHistoryAdd()">취소</button>
-    </div>
-  </div>`;
-}
-
-function renderDeleteModal() {
-  const t = state.deleteTarget;
-  return `
-  <div class="modal-bg" onclick="closeDeleteConfirm()">
-    <div style="background:#fff;border-radius:18px;padding:32px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);" onclick="event.stopPropagation()">
-      <div style="font-size:44px;margin-bottom:12px;">🗑️</div>
-      <h3 style="font-size:17px;font-weight:700;color:#1e293b;margin-bottom:8px;">업체 삭제</h3>
-      <p style="font-size:14px;color:#475569;margin-bottom:6px;"><b style="color:#dc2626;">${esc(t?.name)}</b> 업체를 삭제하시겠습니까?</p>
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">연락 이력, 취업/실습 이력이 모두 함께 삭제됩니다.</p>
-      <div style="display:flex;gap:10px;">
-        <button class="btn btn-outline" style="flex:1;padding:11px;" onclick="closeDeleteConfirm()">취소</button>
-        <button class="btn btn-danger" style="flex:1;padding:11px;font-weight:700;" onclick="confirmDelete()">삭제</button>
-      </div>
-    </div>
-  </div>`;
-}
-
 /* ══════════════════════════════
    이벤트 핸들러
 ══════════════════════════════ */
+
+/* ── 인증 ── */
 function switchAuthMode(m) { state.authMode=m; state.authError=''; state.authSuccess=''; render(); }
 
 async function submitLogin(e) {
   e.preventDefault();
-  const username = document.getElementById('auth-username').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const data = await api('POST', '/auth/login', { username, password });
-  if (data.error) { state.authError = data.error; render(); return; }
-  saveToken(data.token);
-  state.user = data.user;
-  state.authError = '';
+  const username = document.getElementById('auth-username')?.value.trim();
+  const password = document.getElementById('auth-password')?.value;
+  if (!username || !password) { state.authError='아이디와 비밀번호를 입력하세요.'; render(); return; }
+  const d = await api('POST', '/auth/login', { username, password });
+  if (d.error) { state.authError=d.error; render(); return; }
+  saveToken(d.token);
+  state.user = d.user;
+  state.authError=''; state.authSuccess='';
   await loadCompanies();
-  if (data.user.role === 'admin') { await loadAdminStats(); await loadAdminUsers(); }
   render();
 }
 
 async function submitRegister(e) {
   e.preventDefault();
-  const name = document.getElementById('reg-name').value.trim();
-  const dept = document.getElementById('reg-dept').value;
-  const username = document.getElementById('auth-username').value.trim();
-  const password = document.getElementById('auth-password').value;
+  const name = document.getElementById('reg-name')?.value.trim();
+  const dept = document.getElementById('reg-dept')?.value;
+  const username = document.getElementById('auth-username')?.value.trim();
+  const password = document.getElementById('auth-password')?.value;
   if (!name||!dept||!username||!password) { state.authError='모든 항목을 입력해주세요.'; render(); return; }
-  const data = await api('POST', '/auth/register', { name, dept, username, password });
-  if (data.error) { state.authError=data.error; render(); return; }
-  state.authError=''; state.authSuccess=data.message; state.authMode='login'; render();
+  const d = await api('POST', '/auth/register', { name, dept, username, password });
+  if (d.error) { state.authError=d.error; render(); return; }
+  state.authSuccess=d.message; state.authError=''; state.authMode='login';
+  render();
 }
 
 async function doLogout() {
   await api('POST', '/auth/logout');
   saveToken(null);
   state.user=null; state.companies=[]; state.selected=null;
-  state.contactLogs={}; state.histories={}; state.page='main';
+  state.contactLogs={}; state.histories={};
   render();
 }
 
-function goPage(p) {
-  state.page = p;
-  if (p==='admin') { loadAdminStats(); loadAdminUsers(); }
-  render();
-}
-function setAdminTab(t) { state.adminTab=t; render(); }
-
-/* 관리자: 역할 변경 */
-async function toggleRole(id, currentRole) {
-  const newRole = currentRole==='admin' ? 'teacher' : 'admin';
-  const data = await api('PUT', `/admin/users/${id}/role`, { role: newRole });
-  if (data.error) { state.adminError=data.error; render(); return; }
-  state.adminError='';
-  await loadAdminUsers(); render();
-}
-
-/* 관리자: 비번 초기화 모달 */
-function openResetModal(id, name) { state.resetTarget={id,name}; state.resetPw=''; state.showResetModal=true; render(); }
-function closeResetModal() { state.showResetModal=false; state.resetTarget=null; state.resetPw=''; render(); }
-async function confirmResetPassword() {
-  if (!state.resetPw||state.resetPw.length<4) { alert('비밀번호는 4자 이상이어야 합니다.'); return; }
-  const data = await api('PUT', `/admin/users/${state.resetTarget.id}/reset-password`, { password: state.resetPw });
-  if (data.error) { alert(data.error); return; }
-  closeResetModal();
-}
-
-/* 관리자: 회원 삭제 */
-async function deleteUser(id, name) {
-  if (!confirm(`${name} 님을 삭제하시겠습니까?`)) return;
-  const data = await api('DELETE', `/admin/users/${id}`);
-  if (data.error) { state.adminError=data.error; render(); return; }
-  state.adminError='';
-  await loadAdminUsers(); render();
-}
-
-/* 업체 */
-async function selectCompany(id) {
-  state.selected = state.companies.find(c=>c.id===id)||null;
-  if (state.selected) await Promise.all([loadContactLogs(id), loadHistories(id)]);
-  render();
-}
+/* ── 검색/필터 ── */
 function onSearch(v) { state.search=v; render(); }
-function clearSearch() { state.search=''; render(); }
+function clearSearch() { state.search=''; const el=document.getElementById('search-input'); if(el)el.value=''; render(); }
 function setDeptFilter(d) { state.filterDept=d; render(); }
-function openAdd() { state.showAdd=true; state.duplicateMsg=''; render(); }
-function closeAdd() { state.showAdd=false; state.duplicateMsg=''; state.newCompany={name:'',industry:'',departments:[]}; render(); }
-function openContactAdd() { state.showContactAdd=true; render(); }
-function closeContactAdd() { state.showContactAdd=false; render(); }
-function openHistoryAdd() { state.showHistoryAdd=true; render(); }
-function closeHistoryAdd() { state.showHistoryAdd=false; render(); }
-function updateField(obj, key, val) { state[obj][key]=val; if(obj==='newCompany'&&key==='name') state.duplicateMsg=''; }
-function toggleDept(d) {
+
+/* ── 업체 선택 ── */
+async function selectCompany(id) {
+  const c = state.companies.find(x=>x.id===id);
+  if (!c) return;
+  state.selected = c;
+  state.showContactAdd=false; state.showHistoryAdd=false;
+  await Promise.all([loadContactLogs(id), loadHistories(id)]);
+  render();
+}
+
+/* ── 업체 등록 ── */
+function openAdd() {
+  state.newCompany={ name:'',industry:'',address:'',phone:'',manager_name:'',manager_phone:'',manager_email:'',memo:'',departments:[] };
+  state.duplicateMsg=''; state.showAdd=true; render();
+}
+function closeAdd() { state.showAdd=false; render(); }
+function updateNew(k,v) { state.newCompany[k]=v; }
+function toggleNewDept(d) {
   const arr = state.newCompany.departments;
-  state.newCompany.departments = arr.includes(d)?arr.filter(x=>x!==d):[...arr,d];
+  const i = arr.indexOf(d);
+  if (i>=0) arr.splice(i,1); else arr.push(d);
   render();
 }
-async function addCompany() {
-  const name = state.newCompany.name.trim();
-  if (!name) { state.duplicateMsg='업체명을 입력해주세요.'; render(); return; }
-  const norm = name.replace(/\s+/g,'').toLowerCase();
-  const dup = state.companies.find(c=>c.name.replace(/\s+/g,'').toLowerCase()===norm);
-  if (dup) { state.duplicateMsg=`이미 등록된 업체입니다: ${dup.name}`; render(); return; }
-  const result = await api('POST', '/companies', { name, industry: state.newCompany.industry.trim(), departments: state.newCompany.departments });
-  if (result.error) { state.duplicateMsg=result.error; render(); return; }
+function checkDuplicate(v) {
+  const exists = state.companies.some(c=>c.name===v.trim());
+  state.duplicateMsg = exists?'이미 등록된 업체명입니다.':'';
+  const el = document.querySelector('#app p[style*="dc2626"]');
+  // re-render only message area
+}
+async function submitAdd() {
+  const nc = state.newCompany;
+  if (!nc.name.trim()) { alert('업체명을 입력해주세요.'); return; }
+  if (state.duplicateMsg) { alert(state.duplicateMsg); return; }
+  const d = await api('POST', '/companies', nc);
+  if (d.error) { alert(d.error); return; }
+  state.showAdd=false;
   await loadCompanies();
-  state.newCompany={name:'',industry:'',departments:[]}; state.duplicateMsg=''; state.showAdd=false;
   render();
 }
+
+/* ── 업체 수정 ── */
+function openEditCompany(id) {
+  const c = state.companies.find(x=>x.id===id);
+  if (!c) return;
+  state.editCompany = {
+    id: c.id,
+    name: c.name||'', industry: c.industry||'',
+    address: c.address||'', phone: c.phone||'',
+    manager_name: c.manager_name||'', manager_phone: c.manager_phone||'',
+    manager_email: c.manager_email||'', memo: c.memo||'',
+    departments: [...(c.departments||[])]
+  };
+  state.showEditCompany=true; render();
+}
+function closeEditCompany() { state.showEditCompany=false; render(); }
+function updateEdit(k,v) { state.editCompany[k]=v; }
+function toggleEditDept(d) {
+  const arr = state.editCompany.departments;
+  const i = arr.indexOf(d);
+  if (i>=0) arr.splice(i,1); else arr.push(d);
+  render();
+}
+async function submitEditCompany() {
+  const ec = state.editCompany;
+  if (!ec.name.trim()) { alert('업체명을 입력해주세요.'); return; }
+  const d = await api('PUT', `/companies/${ec.id}`, ec);
+  if (d.error) { alert(d.error); return; }
+  state.showEditCompany=false;
+  await loadCompanies();
+  // 선택된 업체 업데이트
+  if (state.selected?.id === ec.id) {
+    state.selected = state.companies.find(c=>c.id===ec.id) || null;
+  }
+  render();
+}
+
+/* ── 업체 삭제 ── */
 function openDeleteConfirm(id, name) { state.deleteTarget={id,name}; state.showDeleteConfirm=true; render(); }
 function closeDeleteConfirm() { state.showDeleteConfirm=false; state.deleteTarget=null; render(); }
 async function confirmDelete() {
   const t = state.deleteTarget;
   if (!t) return;
-  await api('DELETE', `/companies/${t.id}`);
+  const d = await api('DELETE', `/companies/${t.id}`);
+  if (d.error) { alert(d.error); return; }
+  state.showDeleteConfirm=false; state.deleteTarget=null;
   if (state.selected?.id===t.id) state.selected=null;
   await loadCompanies();
-  state.showDeleteConfirm=false; state.deleteTarget=null; render();
-}
-async function addContactLog() {
-  const sel = state.selected;
-  if (!sel||!state.newLog.date||!state.newLog.content) return;
-  await api('POST', `/companies/${sel.id}/contacts`, { ...state.newLog, writer: state.user.name, dept: state.user.dept });
-  await Promise.all([loadContactLogs(sel.id), loadCompanies()]);
-  state.selected = state.companies.find(c=>c.id===sel.id)||sel;
-  state.newLog={date:'',method:'전화',content:''}; state.showContactAdd=false; render();
-}
-async function addHistory() {
-  const sel = state.selected;
-  if (!sel||!state.newHistory.year) return;
-  await api('POST', `/companies/${sel.id}/histories`, { ...state.newHistory, writer: state.user.name });
-  await loadHistories(sel.id);
-  state.newHistory={year:'',department:'',student:'',type:'취업'}; state.showHistoryAdd=false; render();
+  render();
 }
 
-/* ── 시작 ── */
+/* ── 연락 이력 ── */
+function openContactAdd() {
+  state.newLog={ date:new Date().toISOString().slice(0,10), method:'전화', content:'' };
+  state.showContactAdd=true; render();
+}
+function closeContactAdd() { state.showContactAdd=false; render(); }
+async function submitContactAdd() {
+  const sel = state.selected;
+  if (!sel) return;
+  const l = state.newLog;
+  if (!l.date) { alert('날짜를 입력해주세요.'); return; }
+  const d = await api('POST', `/companies/${sel.id}/contacts`, { ...l, writer:state.user?.name, dept:state.user?.dept });
+  if (d.error) { alert(d.error); return; }
+  state.showContactAdd=false;
+  await loadContactLogs(sel.id);
+  // 최근 연락일 업데이트
+  const co = state.companies.find(c=>c.id===sel.id);
+  if (co) { co.last_contact=l.date; state.selected=co; }
+  render();
+}
+
+function openContactEdit(id, date, method, content) {
+  state.editLog={ id, date, method, content };
+  state.showContactEdit=true; render();
+}
+function closeContactEdit() { state.showContactEdit=false; render(); }
+async function submitContactEdit() {
+  const l = state.editLog;
+  if (!l.date) { alert('날짜를 입력해주세요.'); return; }
+  const d = await api('PUT', `/contacts/${l.id}`, { date:l.date, method:l.method, content:l.content });
+  if (d.error) { alert(d.error); return; }
+  state.showContactEdit=false;
+  if (state.selected) await loadContactLogs(state.selected.id);
+  render();
+}
+async function deleteContact(id) {
+  if (!confirm('이 연락 이력을 삭제하시겠습니까?')) return;
+  const d = await api('DELETE', `/contacts/${id}`);
+  if (d.error) { alert(d.error); return; }
+  if (state.selected) await loadContactLogs(state.selected.id);
+  render();
+}
+
+/* ── 취업/실습 이력 ── */
+function openHistoryAdd() {
+  state.newHistory={ year:String(new Date().getFullYear()), department:'', student:'', type:'취업' };
+  state.showHistoryAdd=true; render();
+}
+function closeHistoryAdd() { state.showHistoryAdd=false; render(); }
+async function submitHistoryAdd() {
+  const sel = state.selected;
+  if (!sel) return;
+  const h = state.newHistory;
+  if (!h.year) { alert('연도를 입력해주세요.'); return; }
+  const d = await api('POST', `/companies/${sel.id}/histories`, { ...h, writer:state.user?.name });
+  if (d.error) { alert(d.error); return; }
+  state.showHistoryAdd=false;
+  await loadHistories(sel.id);
+  render();
+}
+
+function openHistoryEdit(id, year, department, student, type) {
+  state.editHistory={ id, year, department, student, type };
+  state.showHistoryEdit=true; render();
+}
+function closeHistoryEdit() { state.showHistoryEdit=false; render(); }
+async function submitHistoryEdit() {
+  const h = state.editHistory;
+  if (!h.year) { alert('연도를 입력해주세요.'); return; }
+  const d = await api('PUT', `/histories/${h.id}`, { year:h.year, department:h.department, student:h.student, type:h.type });
+  if (d.error) { alert(d.error); return; }
+  state.showHistoryEdit=false;
+  if (state.selected) await loadHistories(state.selected.id);
+  render();
+}
+async function deleteHistory(id) {
+  if (!confirm('이 이력을 삭제하시겠습니까?')) return;
+  const d = await api('DELETE', `/histories/${id}`);
+  if (d.error) { alert(d.error); return; }
+  if (state.selected) await loadHistories(state.selected.id);
+  render();
+}
+
+/* ── 관리자 ── */
+function goPage(p) {
+  state.page=p;
+  if (p==='admin') { loadAdminUsers(); loadAdminStats(); }
+  render();
+}
+async function setAdminTab(t) {
+  state.adminTab=t; state.adminError='';
+  if (t==='users') await loadAdminUsers();
+  else await loadAdminStats();
+  render();
+}
+async function toggleRole(id, currentRole) {
+  const newRole = currentRole==='admin'?'teacher':'admin';
+  if (!confirm(`역할을 ${newRole==='admin'?'관리자':'교사'}로 변경하시겠습니까?`)) return;
+  const d = await api('PUT', `/admin/users/${id}/role`, { role:newRole });
+  if (d.error) { state.adminError=d.error; render(); return; }
+  await loadAdminUsers(); render();
+}
+async function deleteUser(id, name) {
+  if (!confirm(`${name} 회원을 삭제하시겠습니까?`)) return;
+  const d = await api('DELETE', `/admin/users/${id}`);
+  if (d.error) { state.adminError=d.error; render(); return; }
+  await loadAdminUsers(); render();
+}
+function openResetModal(id, name) { state.resetTarget={id,name}; state.resetPw=''; state.showResetModal=true; render(); }
+function closeResetModal() { state.showResetModal=false; render(); }
+async function submitResetPassword() {
+  if (!state.resetPw || state.resetPw.length<4) { alert('비밀번호는 4자 이상이어야 합니다.'); return; }
+  const d = await api('PUT', `/admin/users/${state.resetTarget.id}/reset-password`, { password:state.resetPw });
+  if (d.error) { alert(d.error); return; }
+  alert(d.message);
+  state.showResetModal=false; render();
+}
+
+/* ── 앱 초기화 ── */
 async function init() {
-  const token = getToken();
-  if (token) {
-    const data = await api('GET', '/auth/me');
-    if (data.user) {
-      state.user = data.user;
-      await loadCompanies();
-      if (data.user.role==='admin') { await loadAdminStats(); await loadAdminUsers(); }
-    } else { saveToken(null); }
+  const d = await api('GET', '/auth/me');
+  if (d.user) {
+    state.user = d.user;
+    await loadCompanies();
   }
   render();
 }
+
 init();
