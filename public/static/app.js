@@ -154,6 +154,10 @@ function renderAuth() {
             :`이미 계정이 있으신가요? <button onclick="switchAuthMode('login')" style="background:none;border:none;color:#1e40af;font-weight:600;cursor:pointer;">로그인</button>`}
         </p>
       </div>
+      <div style="text-align:center;margin-top:20px;">
+        <p style="color:rgba(255,255,255,0.6);font-size:12px;margin:0;">© ${new Date().getFullYear()} Copyright by <strong style="color:rgba(255,255,255,0.85);">김민성</strong></p>
+        <p style="margin:4px 0 0;"><a href="mailto:anzel386@naver.com" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none;">anzel386@naver.com</a></p>
+      </div>
     </div>
   </div>`;
 }
