@@ -328,6 +328,7 @@ app.put('/api/companies/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 수정할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   const body = await c.req.json() as any
   if (!body.name?.trim()) return c.json({ error: '업체명을 입력해주세요.' }, 400)
@@ -362,6 +363,7 @@ app.delete('/api/companies/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   await db.prepare('DELETE FROM contact_logs WHERE company_id = ?').bind(id).run()
   await db.prepare('DELETE FROM employment_histories WHERE company_id = ?').bind(id).run()
@@ -400,6 +402,7 @@ app.put('/api/contacts/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 수정할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   const body = await c.req.json() as any
   await db.prepare(
@@ -413,6 +416,7 @@ app.delete('/api/contacts/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   await db.prepare('DELETE FROM contact_logs WHERE id = ?').bind(id).run()
   return c.json({ message: '연락 이력이 삭제되었습니다.' })
@@ -447,6 +451,7 @@ app.put('/api/histories/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 수정할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   const body = await c.req.json() as any
   await db.prepare(
@@ -460,6 +465,7 @@ app.delete('/api/histories/:id', async (c) => {
   const db = c.env.DB
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
   const id = c.req.param('id')
   await db.prepare('DELETE FROM employment_histories WHERE id = ?').bind(id).run()
   return c.json({ message: '이력이 삭제되었습니다.' })

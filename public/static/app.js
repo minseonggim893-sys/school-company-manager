@@ -243,7 +243,11 @@ function renderMain() {
   ${state.showHistoryAdd&&sel?renderHistoryAddModal():''}
   ${state.showHistoryEdit?renderHistoryEditModal():''}
   ${state.showDeleteConfirm?renderDeleteModal():''}
-  ${state.showResetModal?renderResetModal():''}`;
+  ${state.showResetModal?renderResetModal():''}
+  <footer style="text-align:center;padding:32px 16px 24px;color:#94a3b8;font-size:13px;">
+    <div>© ${new Date().getFullYear()} Copyright by <strong style="color:#64748b;">김민성</strong></div>
+    <div style="margin-top:4px;">문의 이메일: <a href="mailto:anzel386@naver.com" style="color:#3b82f6;">anzel386@naver.com</a></div>
+  </footer>`;
 }
 
 /* ── 업체 상세 ── */
@@ -256,7 +260,7 @@ function renderDetail(c) {
     <div style="background:#f8fafc;border-radius:10px;padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <span style="font-weight:700;font-size:14px;color:#1e293b;">🏢 기본 정보</span>
-        <button class="btn btn-sm btn-warning" onclick="openEditCompany(${c.id})">✏️ 수정</button>
+        ${state.user?.role==='admin'?`<button class="btn btn-sm btn-warning" onclick="openEditCompany(${c.id})">✏️ 수정</button>`:''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div><div class="info-label">업체명</div><div style="font-weight:600;font-size:14px;">${esc(c.name)}</div></div>
