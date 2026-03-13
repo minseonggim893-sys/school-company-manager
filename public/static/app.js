@@ -2,6 +2,8 @@ const DEPARTMENTS = [
   "파티시에과","스마트기계과","모빌리티과","친환경자동차과",
   "전기과","스마트전자과","드론지형정보과","건축리모델링과","전기배터리과","보통교과"
 ];
+// 업체 관련(검색필터, 업체추가/수정, 이력) 에서는 보통교과 제외
+const COMPANY_DEPARTMENTS = DEPARTMENTS.filter(d => d !== '보통교과');
 const APP_TITLE = '학교 업체관리 시스템';
 const APP_SUBTITLE = '대전도시과학고등학교';
 
@@ -216,7 +218,7 @@ function renderMain() {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-sm ${state.filterDept==='전체'?'btn-active':'btn-outline'} dept-filter-btn" data-dept="전체" onclick="setDeptFilter('전체')">전체</button>
-        ${DEPARTMENTS.map(d=>`<button class="btn btn-sm ${state.filterDept===d?'btn-active':'btn-outline'} dept-filter-btn" data-dept="${d}" onclick="setDeptFilter('${d}')">${d}</button>`).join('')}
+        ${COMPANY_DEPARTMENTS.map(d=>`<button class="btn btn-sm ${state.filterDept===d?'btn-active':'btn-outline'} dept-filter-btn" data-dept="${d}" onclick="setDeptFilter('${d}')">${d}</button>`).join('')}
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
@@ -410,7 +412,7 @@ function renderAddModal() {
         <div>
           <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">관련 학과</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${DEPARTMENTS.map(d=>`
+            ${COMPANY_DEPARTMENTS.map(d=>`
               <button type="button" class="btn btn-sm ${nc.departments.includes(d)?'btn-active':'btn-outline'}"
                 onclick="toggleNewDept('${d}')">${d}</button>`).join('')}
           </div>
@@ -463,7 +465,7 @@ function renderEditCompanyModal() {
         <div>
           <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">관련 학과</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${DEPARTMENTS.map(d=>`
+            ${COMPANY_DEPARTMENTS.map(d=>`
               <button type="button" class="btn btn-sm ${ec.departments.includes(d)?'btn-active':'btn-outline'}"
                 onclick="toggleEditDept('${d}')">${d}</button>`).join('')}
           </div>
@@ -560,7 +562,7 @@ function renderHistoryAddModal() {
         <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학과</label>
           <select onchange="state.newHistory.department=this.value">
             <option value="">학과 선택</option>
-            ${DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
+            ${COMPANY_DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
         <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학생 이름</label>
@@ -596,7 +598,7 @@ function renderHistoryEditModal() {
         <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학과</label>
           <select onchange="state.editHistory.department=this.value">
             <option value="">학과 선택</option>
-            ${DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
+            ${COMPANY_DEPARTMENTS.map(d=>`<option value="${d}" ${h.department===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
         <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">학생 이름</label>
