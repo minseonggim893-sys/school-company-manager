@@ -226,27 +226,42 @@ function renderMain() {
           <span id="company-list-count" style="font-size:12px;color:#94a3b8;">총 ${filtered.length}개</span>
         </div>
         <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
-          <table>
-            <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일</th><th>연락자</th><th></th></tr></thead>
+          <table style="table-layout:fixed;width:100%;">
+            <colgroup>
+              <col style="width:26%"/>
+              <col style="width:15%"/>
+              <col style="width:22%"/>
+              <col style="width:13%"/>
+              <col style="width:16%"/>
+              <col style="width:8%"/>
+            </colgroup>
+            <thead><tr>
+              <th>업체명</th>
+              <th>업종</th>
+              <th>관련 학과</th>
+              <th>최근 연락일</th>
+              <th>연락자</th>
+              <th></th>
+            </tr></thead>
             <tbody id="company-list-body">
               ${(()=>{const {items,total,totalPages,currentPage}=getPagedCompanies();
                 return items.length===0
-                  ?`<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
+                  ?`<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
                   :items.map(c=>`
                   <tr class="${sel?.id===c.id?'row-selected':''}" onclick="selectCompany(${c.id})">
-                    <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
-                    <td style="color:#64748b;">${esc(c.industry||'-')}</td>
-                    <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-                    <td style="color:#94a3b8;white-space:nowrap;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
-                    <td style="font-size:12px;color:#3b82f6;white-space:nowrap;">${esc(c.last_contact_writer||'-')}</td>
-                    <td onclick="event.stopPropagation()">
+                    <td style="font-weight:600;color:#1e40af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.name)}</td>
+                    <td style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.industry||'-')}</td>
+                    <td style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
+                    <td style="color:#94a3b8;white-space:nowrap;font-size:12px;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
+                    <td style="color:#3b82f6;white-space:nowrap;font-size:12px;overflow:hidden;text-overflow:ellipsis;">${esc(c.last_contact_writer||'-')}</td>
+                    <td onclick="event.stopPropagation()" style="text-align:center;">
                       ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
                     </td>
                   </tr>`).join('');})()}
             </tbody>
           </table>
         </div>
-        <div id="company-pagination" style="margin-top:12px;"></div>
+        <div id="company-pagination" style="margin-top:12px;">${buildPaginationHTML()}</div>
       </div>
       <div id="company-detail-panel" class="card" style="padding:16px;overflow-y:auto;max-height:700px;">
         <span style="font-weight:700;font-size:15px;">업체 상세</span>
@@ -761,6 +776,40 @@ function clearSearch() {
 function setDeptFilter(d) { state.filterDept=d; state.currentPage=1; renderListOnly(); }
 function goToPage(p) { state.currentPage=p; renderListOnly(); }
 
+/* ── 페이지네이션 HTML 생성 (공통) ── */
+function buildPaginationHTML(totalPages, currentPage) {
+  if (totalPages === undefined) {
+    const paged = getPagedCompanies();
+    totalPages = paged.totalPages;
+    currentPage = paged.currentPage;
+  }
+  let btns = '';
+  btns += `<button onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''}
+    style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
+    cursor:${currentPage===1?'default':'pointer'};color:${currentPage===1?'#cbd5e1':'#374151'};font-size:13px;">◀</button>`;
+  const range = 2;
+  let prevDot = false, nextDot = false;
+  for (let i=1; i<=totalPages; i++) {
+    if (i===1 || i===totalPages || (i>=currentPage-range && i<=currentPage+range)) {
+      prevDot = false; nextDot = false;
+      btns += `<button onclick="goToPage(${i})"
+        style="padding:5px 10px;border:1px solid ${i===currentPage?'#1e40af':'#e5e7eb'};border-radius:6px;
+        background:${i===currentPage?'#1e40af':'#fff'};color:${i===currentPage?'#fff':'#374151'};
+        font-weight:${i===currentPage?700:400};cursor:pointer;font-size:13px;">${i}</button>`;
+    } else if (i < currentPage-range && !prevDot) {
+      prevDot = true;
+      btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
+    } else if (i > currentPage+range && !nextDot) {
+      nextDot = true;
+      btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
+    }
+  }
+  btns += `<button onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}
+    style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
+    cursor:${currentPage===totalPages?'default':'pointer'};color:${currentPage===totalPages?'#cbd5e1':'#374151'};font-size:13px;">▶</button>`;
+  return `<div style="display:flex;gap:4px;justify-content:center;align-items:center;flex-wrap:wrap;">${btns}</div>`;
+}
+
 /* ── 목록만 부분 업데이트 (검색/필터/페이지용) ── */
 function renderListOnly() {
   const listEl = document.getElementById('company-list-body');
@@ -776,46 +825,18 @@ function renderListOnly() {
     ? `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
     : items.map(c => `
         <tr class="${state.selected?.id===c.id?'row-selected':''}" onclick="selectCompany(${c.id})">
-          <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
-          <td style="color:#64748b;">${esc(c.industry||'-')}</td>
-          <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-          <td style="color:#94a3b8;white-space:nowrap;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
-          <td style="font-size:12px;color:#3b82f6;white-space:nowrap;">${esc(c.last_contact_writer||'-')}</td>
-          <td onclick="event.stopPropagation()">
+          <td style="font-weight:600;color:#1e40af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.name)}</td>
+          <td style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.industry||'-')}</td>
+          <td style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
+          <td style="color:#94a3b8;white-space:nowrap;font-size:12px;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
+          <td style="color:#3b82f6;white-space:nowrap;font-size:12px;overflow:hidden;text-overflow:ellipsis;">${esc(c.last_contact_writer||'-')}</td>
+          <td onclick="event.stopPropagation()" style="text-align:center;">
             ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
           </td>
         </tr>`).join('');
 
   if (pageEl) {
-    if (totalPages <= 1) {
-      pageEl.innerHTML = '';
-    } else {
-      let btns = '';
-      btns += `<button onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''}
-        style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
-        cursor:${currentPage===1?'default':'pointer'};color:${currentPage===1?'#cbd5e1':'#374151'};font-size:13px;">◀</button>`;
-      const range = 2;
-      let prevDot = false, nextDot = false;
-      for (let i=1; i<=totalPages; i++) {
-        if (i===1 || i===totalPages || (i>=currentPage-range && i<=currentPage+range)) {
-          prevDot = false; nextDot = false;
-          btns += `<button onclick="goToPage(${i})"
-            style="padding:5px 10px;border:1px solid ${i===currentPage?'#1e40af':'#e5e7eb'};border-radius:6px;
-            background:${i===currentPage?'#1e40af':'#fff'};color:${i===currentPage?'#fff':'#374151'};
-            font-weight:${i===currentPage?700:400};cursor:pointer;font-size:13px;">${i}</button>`;
-        } else if (i < currentPage-range && !prevDot) {
-          prevDot = true;
-          btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
-        } else if (i > currentPage+range && !nextDot) {
-          nextDot = true;
-          btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
-        }
-      }
-      btns += `<button onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}
-        style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
-        cursor:${currentPage===totalPages?'default':'pointer'};color:${currentPage===totalPages?'#cbd5e1':'#374151'};font-size:13px;">▶</button>`;
-      pageEl.innerHTML = `<div style="display:flex;gap:4px;justify-content:center;align-items:center;flex-wrap:wrap;">${btns}</div>`;
-    }
+    pageEl.innerHTML = buildPaginationHTML(totalPages, currentPage);
   }
 
   document.querySelectorAll('.dept-filter-btn').forEach(btn => {
