@@ -227,7 +227,7 @@ function renderMain() {
         </div>
         <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
           <table>
-            <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일 / 연락자</th><th></th></tr></thead>
+            <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일</th><th>연락자</th><th></th></tr></thead>
             <tbody id="company-list-body">
               ${(()=>{const {items,total,totalPages,currentPage}=getPagedCompanies();
                 return items.length===0
@@ -237,10 +237,8 @@ function renderMain() {
                     <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
                     <td style="color:#64748b;">${esc(c.industry||'-')}</td>
                     <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-                    <td style="white-space:nowrap;">
-                      <div style="color:#94a3b8;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</div>
-                      ${c.last_contact_writer?`<div style="font-size:11px;color:#3b82f6;">${esc(c.last_contact_writer)}</div>`:''}
-                    </td>
+                    <td style="color:#94a3b8;white-space:nowrap;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
+                    <td style="font-size:12px;color:#3b82f6;white-space:nowrap;">${esc(c.last_contact_writer||'-')}</td>
                     <td onclick="event.stopPropagation()">
                       ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
                     </td>
@@ -250,7 +248,7 @@ function renderMain() {
         </div>
         <div id="company-pagination" style="margin-top:12px;"></div>
       </div>
-      <div class="card" style="padding:16px;overflow-y:auto;max-height:700px;">
+      <div id="company-detail-panel" class="card" style="padding:16px;overflow-y:auto;max-height:700px;">
         <span style="font-weight:700;font-size:15px;">업체 상세</span>
         ${!sel?`<p style="font-size:13px;color:#94a3b8;margin-top:8px;">업체를 선택하세요.</p>`:renderDetail(sel)}
       </div>
@@ -781,10 +779,8 @@ function renderListOnly() {
           <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
           <td style="color:#64748b;">${esc(c.industry||'-')}</td>
           <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-          <td style="white-space:nowrap;">
-            <div style="color:#94a3b8;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</div>
-            ${c.last_contact_writer?`<div style="font-size:11px;color:#3b82f6;">${esc(c.last_contact_writer)}</div>`:''}
-          </td>
+          <td style="color:#94a3b8;white-space:nowrap;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</td>
+          <td style="font-size:12px;color:#3b82f6;white-space:nowrap;">${esc(c.last_contact_writer||'-')}</td>
           <td onclick="event.stopPropagation()">
             ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
           </td>
@@ -837,7 +833,24 @@ async function selectCompany(id) {
   state.selected = c;
   state.showContactAdd=false; state.showHistoryAdd=false;
   await Promise.all([loadContactLogs(id), loadHistories(id)]);
-  render();
+
+  // 우측 상세 패널만 업데이트 (페이지네이션 유지)
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(c)}`;
+    // 선택된 행 하이라이트 업데이트
+    document.querySelectorAll('#company-list-body tr').forEach(tr => {
+      tr.classList.remove('row-selected');
+    });
+    const rows = document.querySelectorAll('#company-list-body tr');
+    rows.forEach(tr => {
+      if (tr.getAttribute('onclick') === `selectCompany(${id})`) {
+        tr.classList.add('row-selected');
+      }
+    });
+  } else {
+    render();
+  }
 }
 
 /* ── 업체 등록 ── */
