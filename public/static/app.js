@@ -5,11 +5,14 @@ const DEPARTMENTS = [
 const APP_TITLE = '학교 업체관리 시스템';
 const APP_SUBTITLE = '대전도시과학고등학교';
 
+const PAGE_SIZE = 10;
+
 let state = {
   user: null,
   authMode: 'login',
   authError: '', authSuccess: '',
   page: 'main',
+  currentPage: 1,
   adminTab: 'users',
   adminUsers: [],
   adminStats: null,
@@ -99,6 +102,14 @@ function getFiltered() {
     const mD = state.filterDept === '전체' || (c.departments||[]).includes(state.filterDept);
     return mS && mD;
   });
+}
+function getPagedCompanies() {
+  const filtered = getFiltered();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(state.currentPage, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  return { items: filtered.slice(start, start + PAGE_SIZE), total, totalPages, currentPage: safePage };
 }
 
 /* ══════════════════════════════
@@ -216,23 +227,28 @@ function renderMain() {
         </div>
         <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
           <table>
-            <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일</th><th></th></tr></thead>
+            <thead><tr><th>업체명</th><th>업종</th><th>관련 학과</th><th>최근 연락일 / 연락자</th><th></th></tr></thead>
             <tbody id="company-list-body">
-              ${filtered.length===0
-                ?`<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
-                :filtered.map(c=>`
+              ${(()=>{const {items,total,totalPages,currentPage}=getPagedCompanies();
+                return items.length===0
+                  ?`<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
+                  :items.map(c=>`
                   <tr class="${sel?.id===c.id?'row-selected':''}" onclick="selectCompany(${c.id})">
                     <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
                     <td style="color:#64748b;">${esc(c.industry||'-')}</td>
                     <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-                    <td style="color:#94a3b8;white-space:nowrap;">${esc(c.last_contact||'-')}</td>
-                    <td onclick="event.stopPropagation()">
-                      <button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>
+                    <td style="white-space:nowrap;">
+                      <div style="color:#94a3b8;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</div>
+                      ${c.last_contact_writer?`<div style="font-size:11px;color:#3b82f6;">${esc(c.last_contact_writer)}</div>`:''}
                     </td>
-                  </tr>`).join('')}
+                    <td onclick="event.stopPropagation()">
+                      ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
+                    </td>
+                  </tr>`).join('');})()}
             </tbody>
           </table>
         </div>
+        <div id="company-pagination" style="margin-top:12px;"></div>
       </div>
       <div class="card" style="padding:16px;overflow-y:auto;max-height:700px;">
         <span style="font-weight:700;font-size:15px;">업체 상세</span>
@@ -734,43 +750,83 @@ async function doLogout() {
 /* ── 검색/필터 ── */
 function onSearch(v) {
   state.search = v;
-  renderListOnly(); // 목록만 부분 업데이트
+  state.currentPage = 1;
+  renderListOnly();
 }
 function clearSearch() {
   state.search = '';
+  state.currentPage = 1;
   const el = document.getElementById('search-input');
   if (el) { el.value = ''; el.focus(); }
   renderListOnly();
 }
-function setDeptFilter(d) { state.filterDept=d; renderListOnly(); }
+function setDeptFilter(d) { state.filterDept=d; state.currentPage=1; renderListOnly(); }
+function goToPage(p) { state.currentPage=p; renderListOnly(); }
 
-/* ── 목록만 부분 업데이트 (검색/필터용) ── */
+/* ── 목록만 부분 업데이트 (검색/필터/페이지용) ── */
 function renderListOnly() {
   const listEl = document.getElementById('company-list-body');
   const countEl = document.getElementById('company-list-count');
+  const pageEl  = document.getElementById('company-pagination');
   if (!listEl || !countEl) { render(); return; }
-  const filtered = getFiltered();
-  countEl.textContent = '총 ' + filtered.length + '개';
-  listEl.innerHTML = filtered.length === 0
-    ? `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
-    : filtered.map(c => `
+
+  const { items, total, totalPages, currentPage } = getPagedCompanies();
+  state.currentPage = currentPage;
+  countEl.textContent = '총 ' + total + '개';
+
+  listEl.innerHTML = items.length === 0
+    ? `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px;">검색 결과 없음</td></tr>`
+    : items.map(c => `
         <tr class="${state.selected?.id===c.id?'row-selected':''}" onclick="selectCompany(${c.id})">
           <td style="font-weight:600;color:#1e40af;">${esc(c.name)}</td>
           <td style="color:#64748b;">${esc(c.industry||'-')}</td>
           <td style="color:#64748b;">${(c.departments||[]).map(esc).join(', ')||'-'}</td>
-          <td style="color:#94a3b8;white-space:nowrap;">${esc(c.last_contact||'-')}</td>
+          <td style="white-space:nowrap;">
+            <div style="color:#94a3b8;">${esc(!c.last_contact||c.last_contact==='-'?'-':c.last_contact)}</div>
+            ${c.last_contact_writer?`<div style="font-size:11px;color:#3b82f6;">${esc(c.last_contact_writer)}</div>`:''}
+          </td>
           <td onclick="event.stopPropagation()">
-            <button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>
+            ${state.user?.role==='admin'?`<button class="btn btn-sm btn-danger" style="padding:3px 8px;" onclick="openDeleteConfirm(${c.id},'${esc(c.name)}')">🗑</button>`:''}
           </td>
         </tr>`).join('');
-  // 학과 필터 버튼 색상도 업데이트
+
+  if (pageEl) {
+    if (totalPages <= 1) {
+      pageEl.innerHTML = '';
+    } else {
+      let btns = '';
+      btns += `<button onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''}
+        style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
+        cursor:${currentPage===1?'default':'pointer'};color:${currentPage===1?'#cbd5e1':'#374151'};font-size:13px;">◀</button>`;
+      const range = 2;
+      let prevDot = false, nextDot = false;
+      for (let i=1; i<=totalPages; i++) {
+        if (i===1 || i===totalPages || (i>=currentPage-range && i<=currentPage+range)) {
+          prevDot = false; nextDot = false;
+          btns += `<button onclick="goToPage(${i})"
+            style="padding:5px 10px;border:1px solid ${i===currentPage?'#1e40af':'#e5e7eb'};border-radius:6px;
+            background:${i===currentPage?'#1e40af':'#fff'};color:${i===currentPage?'#fff':'#374151'};
+            font-weight:${i===currentPage?700:400};cursor:pointer;font-size:13px;">${i}</button>`;
+        } else if (i < currentPage-range && !prevDot) {
+          prevDot = true;
+          btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
+        } else if (i > currentPage+range && !nextDot) {
+          nextDot = true;
+          btns += `<span style="padding:5px 4px;font-size:13px;color:#94a3b8;">...</span>`;
+        }
+      }
+      btns += `<button onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}
+        style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;
+        cursor:${currentPage===totalPages?'default':'pointer'};color:${currentPage===totalPages?'#cbd5e1':'#374151'};font-size:13px;">▶</button>`;
+      pageEl.innerHTML = `<div style="display:flex;gap:4px;justify-content:center;align-items:center;flex-wrap:wrap;">${btns}</div>`;
+    }
+  }
+
   document.querySelectorAll('.dept-filter-btn').forEach(btn => {
     const d = btn.dataset.dept;
-    if (d === state.filterDept) {
-      btn.className = 'btn btn-sm btn-active dept-filter-btn';
-    } else {
-      btn.className = 'btn btn-sm btn-outline dept-filter-btn';
-    }
+    btn.className = d === state.filterDept
+      ? 'btn btn-sm btn-active dept-filter-btn'
+      : 'btn btn-sm btn-outline dept-filter-btn';
   });
 }
 

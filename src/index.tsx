@@ -286,11 +286,31 @@ app.get('/api/companies', async (c) => {
   await initDB(db)
   const user = await getSessionUser(c)
   if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
-  const companies = await db.prepare('SELECT * FROM companies ORDER BY created_at DESC').all()
+  // 최근 연락일 기준 내림차순, 없으면 등록일 기준
+  const companies = await db.prepare(`
+    SELECT * FROM companies
+    ORDER BY
+      CASE WHEN last_contact = '-' OR last_contact IS NULL THEN 1 ELSE 0 END,
+      last_contact DESC,
+      created_at DESC
+  `).all()
   const depts = await db.prepare('SELECT * FROM company_departments').all()
+  // 각 업체의 가장 최근 연락 이력에서 연락자 이름 가져오기
+  const latestContacts = await db.prepare(`
+    SELECT company_id, writer
+    FROM contact_logs
+    WHERE id IN (
+      SELECT MAX(id) FROM contact_logs GROUP BY company_id
+    )
+  `).all()
+  const writerMap: Record<number, string> = {}
+  for (const row of (latestContacts.results as any[])) {
+    writerMap[row.company_id] = row.writer || ''
+  }
   const result = (companies.results as any[]).map(co => ({
     ...co,
-    departments: (depts.results as any[]).filter(d => d.company_id === co.id).map(d => d.department)
+    departments: (depts.results as any[]).filter(d => d.company_id === co.id).map(d => d.department),
+    last_contact_writer: writerMap[co.id] || ''
   }))
   return c.json({ companies: result })
 })
