@@ -491,4 +491,52 @@ app.delete('/api/histories/:id', async (c) => {
   return c.json({ message: '이력이 삭제되었습니다.' })
 })
 
+/* ── 연도별 담당교사 API ── */
+app.get('/api/companies/:id/charges', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const db = c.env.DB
+  const id = c.req.param('id')
+  const charges = await db.prepare(
+    'SELECT * FROM teacher_charges WHERE company_id = ? ORDER BY year DESC, created_at DESC'
+  ).bind(id).all()
+  return c.json({ charges: charges.results })
+})
+
+app.post('/api/companies/:id/charges', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  const db = c.env.DB
+  const id = c.req.param('id')
+  const { year, teacher_name, department, note } = await c.req.json()
+  if (!year || !teacher_name) return c.json({ error: '연도와 담당교사 이름은 필수입니다.' }, 400)
+  const result = await db.prepare(
+    'INSERT INTO teacher_charges (company_id, year, teacher_name, department, note) VALUES (?, ?, ?, ?, ?)'
+  ).bind(id, year, teacher_name, department || '', note || '').run()
+  return c.json({ id: result.meta.last_row_id, message: '담당교사가 추가되었습니다.' })
+})
+
+app.put('/api/charges/:id', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 수정할 수 있습니다.' }, 403)
+  const db = c.env.DB
+  const id = c.req.param('id')
+  const { year, teacher_name, department, note } = await c.req.json()
+  await db.prepare(
+    'UPDATE teacher_charges SET year = ?, teacher_name = ?, department = ?, note = ? WHERE id = ?'
+  ).bind(year, teacher_name, department || '', note || '', id).run()
+  return c.json({ message: '담당교사 정보가 수정되었습니다.' })
+})
+
+app.delete('/api/charges/:id', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
+  const db = c.env.DB
+  const id = c.req.param('id')
+  await db.prepare('DELETE FROM teacher_charges WHERE id = ?').bind(id).run()
+  return c.json({ message: '담당교사가 삭제되었습니다.' })
+})
+
 export default app

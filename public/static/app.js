@@ -46,6 +46,12 @@ let state = {
   editLog: { id:null, date:'', method:'전화', content:'' },
   newHistory: { year:'', department:'', student:'', type:'취업' },
   editHistory: { id:null, year:'', department:'', student:'', type:'취업' },
+  // 담당교사
+  charges: {},
+  showChargeAdd: false,
+  showChargeEdit: false,
+  newCharge: { year:'', teacher_name:'', department:'', note:'' },
+  editCharge: { id:null, year:'', teacher_name:'', department:'', note:'' },
   duplicateMsg: ''
 };
 
@@ -82,6 +88,10 @@ async function loadContactLogs(id) {
 async function loadHistories(id) {
   const d = await api('GET', `/companies/${id}/histories`);
   state.histories[id] = d.histories || [];
+}
+async function loadCharges(id) {
+  const d = await api('GET', `/companies/${id}/charges`);
+  state.charges[id] = d.charges || [];
 }
 async function loadAdminUsers() {
   const d = await api('GET', '/admin/users');
@@ -279,6 +289,8 @@ function renderMain() {
   ${state.showHistoryEdit?renderHistoryEditModal():''}
   ${state.showDeleteConfirm?renderDeleteModal():''}
   ${state.showResetModal?renderResetModal():''}
+  ${state.showChargeAdd&&sel?renderChargeAddModal():''}
+  ${state.showChargeEdit?renderChargeEditModal():''}
   <footer style="text-align:center;padding:32px 16px 24px;color:#94a3b8;font-size:13px;">
     <div>© ${new Date().getFullYear()} Copyright by <strong style="color:#64748b;">김민성</strong></div>
     <div style="margin-top:4px;">문의 이메일: <a href="mailto:anzel386@naver.com" style="color:#3b82f6;">anzel386@naver.com</a></div>
@@ -289,6 +301,7 @@ function renderMain() {
 function renderDetail(c) {
   const logs = state.contactLogs[c.id] || [];
   const hists = state.histories[c.id] || [];
+  const charges = state.charges[c.id] || [];
   return `
   <div style="margin-top:12px;display:grid;gap:14px;">
     <!-- 업체 기본정보 -->
@@ -364,6 +377,37 @@ function renderDetail(c) {
                   onclick="openHistoryEdit(${h.id},'${esc(h.year)}','${esc(h.department)}','${esc(h.student)}','${esc(h.type)}')">✏️</button>
                 <button class="btn btn-sm btn-danger" style="padding:2px 7px;font-size:11px;"
                   onclick="deleteHistory(${h.id})">🗑</button>
+              </div>
+            </div>
+          </div>`).join('')}
+    </div>
+
+    <!-- 연도별 담당교사 -->
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">👨‍🏫 연도별 담당교사</span>
+        <button class="btn btn-sm btn-primary" onclick="openChargeAdd()">+ 추가</button>
+      </div>
+      ${charges.length===0
+        ?`<p style="font-size:13px;color:#94a3b8;">담당교사 기록이 없습니다.</p>`
+        :charges.map(ch=>`
+          <div class="log-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <span style="font-size:13px;font-weight:700;color:#1e40af;">${esc(ch.year)}년</span>
+                  <span style="font-size:13px;font-weight:600;color:#374151;">${esc(ch.teacher_name)}</span>
+                  ${ch.department?`<span style="font-size:12px;color:#64748b;background:#f1f5f9;padding:1px 8px;border-radius:10px;">${esc(ch.department)}</span>`:''}
+                </div>
+                ${ch.note?`<div style="font-size:12px;color:#64748b;margin-top:3px;">${esc(ch.note)}</div>`:''}
+              </div>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                ${state.user?.role==='admin'?`
+                  <button class="btn btn-sm btn-warning" style="padding:2px 7px;font-size:11px;"
+                    onclick="openChargeEdit(${ch.id},'${esc(ch.year)}','${esc(ch.teacher_name)}','${esc(ch.department||'')}',\`${esc(ch.note||'')}\`)">✏️</button>
+                  <button class="btn btn-sm btn-danger" style="padding:2px 7px;font-size:11px;"
+                    onclick="deleteCharge(${ch.id})">🗑</button>
+                `:''}
               </div>
             </div>
           </div>`).join('')}
@@ -855,7 +899,7 @@ async function selectCompany(id) {
   if (!c) return;
   state.selected = c;
   state.showContactAdd=false; state.showHistoryAdd=false;
-  await Promise.all([loadContactLogs(id), loadHistories(id)]);
+  await Promise.all([loadContactLogs(id), loadHistories(id), loadCharges(id)]);
 
   // 우측 상세 패널만 업데이트 (페이지네이션 유지)
   const detailEl = document.getElementById('company-detail-panel');
@@ -1082,6 +1126,164 @@ async function init() {
     await loadCompanies();
   }
   render();
+}
+
+/* ══════════════════════════════
+   담당교사 모달 & CRUD
+══════════════════════════════ */
+function renderChargeAddModal() {
+  const ch = state.newCharge;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeChargeAdd()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:420px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">👨‍🏫 담당교사 추가</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">연도 *</label>
+            <input type="number" placeholder="${new Date().getFullYear()}" value="${esc(ch.year)}"
+              oninput="state.newCharge.year=this.value" />
+          </div>
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당교사 이름 *</label>
+            <input type="text" placeholder="홍길동" value="${esc(ch.teacher_name)}"
+              oninput="state.newCharge.teacher_name=this.value" />
+          </div>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">소속 학과</label>
+          <select onchange="state.newCharge.department=this.value">
+            <option value="">학과 선택</option>
+            ${COMPANY_DEPARTMENTS.map(d=>`<option value="${d}" ${ch.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">메모</label>
+          <input type="text" placeholder="비고 사항" value="${esc(ch.note)}"
+            oninput="state.newCharge.note=this.value" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeChargeAdd()">취소</button>
+        <button class="btn btn-primary" onclick="submitChargeAdd()">추가</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderChargeEditModal() {
+  const ch = state.editCharge;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)closeChargeEdit()">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:420px;">
+      <h3 style="font-size:17px;font-weight:700;margin:0 0 20px;">✏️ 담당교사 수정</h3>
+      <div style="display:grid;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">연도 *</label>
+            <input type="number" placeholder="연도" value="${esc(ch.year)}"
+              oninput="state.editCharge.year=this.value" />
+          </div>
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">담당교사 이름 *</label>
+            <input type="text" placeholder="홍길동" value="${esc(ch.teacher_name)}"
+              oninput="state.editCharge.teacher_name=this.value" />
+          </div>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">소속 학과</label>
+          <select onchange="state.editCharge.department=this.value">
+            <option value="">학과 선택</option>
+            ${COMPANY_DEPARTMENTS.map(d=>`<option value="${d}" ${ch.department===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">메모</label>
+          <input type="text" placeholder="비고 사항" value="${esc(ch.note)}"
+            oninput="state.editCharge.note=this.value" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="closeChargeEdit()">취소</button>
+        <button class="btn btn-primary" onclick="submitChargeEdit()">저장</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openChargeAdd() {
+  state.newCharge = { year: new Date().getFullYear(), teacher_name:'', department:'', note:'' };
+  state.showChargeAdd = true;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  } else { render(); }
+}
+function closeChargeAdd() {
+  state.showChargeAdd = false;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  } else { render(); }
+}
+function openChargeEdit(id, year, teacher_name, department, note) {
+  state.editCharge = { id, year, teacher_name, department, note };
+  state.showChargeEdit = true;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  } else { render(); }
+}
+function closeChargeEdit() {
+  state.showChargeEdit = false;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  } else { render(); }
+}
+
+async function submitChargeAdd() {
+  const sel = state.selected;
+  if (!sel) return;
+  const ch = state.newCharge;
+  if (!ch.year || !ch.teacher_name.trim()) { alert('연도와 담당교사 이름을 입력해주세요.'); return; }
+  const d = await api('POST', `/companies/${sel.id}/charges`, ch);
+  if (d.error) { alert(d.error); return; }
+  state.showChargeAdd = false;
+  await loadCharges(sel.id);
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
+  } else { render(); }
+}
+
+async function submitChargeEdit() {
+  const sel = state.selected;
+  if (!sel) return;
+  const ch = state.editCharge;
+  if (!ch.year || !ch.teacher_name.trim()) { alert('연도와 담당교사 이름을 입력해주세요.'); return; }
+  const d = await api('PUT', `/charges/${ch.id}`, ch);
+  if (d.error) { alert(d.error); return; }
+  state.showChargeEdit = false;
+  await loadCharges(sel.id);
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl) {
+    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
+  } else { render(); }
+}
+
+async function deleteCharge(id) {
+  if (!confirm('담당교사 기록을 삭제하시겠습니까?')) return;
+  const sel = state.selected;
+  const d = await api('DELETE', `/charges/${id}`);
+  if (d.error) { alert(d.error); return; }
+  if (sel) {
+    await loadCharges(sel.id);
+    const detailEl = document.getElementById('company-detail-panel');
+    if (detailEl) {
+      detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
+    } else { render(); }
+  }
 }
 
 init();
