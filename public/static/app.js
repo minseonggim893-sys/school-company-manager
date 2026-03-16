@@ -52,6 +52,10 @@ let state = {
   showChargeEdit: false,
   newCharge: { year:'', teacher_name:'', department:'', note:'' },
   editCharge: { id:null, year:'', teacher_name:'', department:'', note:'' },
+  // 상세 섹션별 페이지
+  logPage: 1,
+  histPage: 1,
+  chargePage: 1,
   duplicateMsg: ''
 };
 
@@ -298,10 +302,45 @@ function renderMain() {
 }
 
 /* ── 업체 상세 ── */
+const DETAIL_PAGE_SIZE = 5;
+
+function detailPageHTML(cur, total, setter) {
+  if (total <= 1) return '';
+  let btns = `<button onclick="${setter}(${cur-1})" ${cur===1?'disabled':''}
+    style="padding:3px 8px;border:1px solid #e5e7eb;border-radius:5px;background:#fff;
+    cursor:${cur===1?'default':'pointer'};color:${cur===1?'#cbd5e1':'#374151'};font-size:12px;">◀</button>`;
+  for (let i=1; i<=total; i++) {
+    btns += `<button onclick="${setter}(${i})"
+      style="padding:3px 8px;border:1px solid ${i===cur?'#1e40af':'#e5e7eb'};border-radius:5px;
+      background:${i===cur?'#1e40af':'#fff'};color:${i===cur?'#fff':'#374151'};
+      font-weight:${i===cur?700:400};cursor:pointer;font-size:12px;">${i}</button>`;
+  }
+  btns += `<button onclick="${setter}(${cur+1})" ${cur===total?'disabled':''}
+    style="padding:3px 8px;border:1px solid #e5e7eb;border-radius:5px;background:#fff;
+    cursor:${cur===total?'default':'pointer'};color:${cur===total?'#cbd5e1':'#374151'};font-size:12px;">▶</button>`;
+  return `<div style="display:flex;gap:3px;justify-content:center;margin-top:8px;flex-wrap:wrap;">${btns}</div>`;
+}
+
 function renderDetail(c) {
-  const logs = state.contactLogs[c.id] || [];
-  const hists = state.histories[c.id] || [];
-  const charges = state.charges[c.id] || [];
+  const logs    = state.contactLogs[c.id] || [];
+  const hists   = state.histories[c.id]   || [];
+  const charges = state.charges[c.id]     || [];
+
+  // 연락 이력 페이징
+  const logTotal = Math.max(1, Math.ceil(logs.length / DETAIL_PAGE_SIZE));
+  const logCur   = Math.min(state.logPage, logTotal);
+  const logItems = logs.slice((logCur-1)*DETAIL_PAGE_SIZE, logCur*DETAIL_PAGE_SIZE);
+
+  // 취업/실습 이력 페이징
+  const histTotal = Math.max(1, Math.ceil(hists.length / DETAIL_PAGE_SIZE));
+  const histCur   = Math.min(state.histPage, histTotal);
+  const histItems = hists.slice((histCur-1)*DETAIL_PAGE_SIZE, histCur*DETAIL_PAGE_SIZE);
+
+  // 담당교사 페이징
+  const chargeTotal = Math.max(1, Math.ceil(charges.length / DETAIL_PAGE_SIZE));
+  const chargeCur   = Math.min(state.chargePage, chargeTotal);
+  const chargeItems = charges.slice((chargeCur-1)*DETAIL_PAGE_SIZE, chargeCur*DETAIL_PAGE_SIZE);
+
   return `
   <div style="margin-top:12px;display:grid;gap:14px;">
     <!-- 업체 기본정보 -->
@@ -326,12 +365,12 @@ function renderDetail(c) {
     <!-- 연락 이력 -->
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;color:#1e293b;">📞 연락 이력</span>
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">📞 연락 이력 ${logs.length>0?`<span style="font-size:12px;color:#94a3b8;font-weight:400;">(${logs.length}건)</span>`:''}</span>
         <button class="btn btn-sm btn-primary" onclick="openContactAdd()">+ 추가</button>
       </div>
       ${logs.length===0
         ?`<p style="font-size:13px;color:#94a3b8;">연락 이력이 없습니다.</p>`
-        :logs.map(l=>`
+        :logItems.map(l=>`
           <div class="log-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div style="flex:1;">
@@ -350,17 +389,18 @@ function renderDetail(c) {
               </div>
             </div>
           </div>`).join('')}
+      ${detailPageHTML(logCur, logTotal, 'setLogPage')}
     </div>
 
     <!-- 취업/실습 이력 -->
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;color:#1e293b;">🎓 취업/실습 이력</span>
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">🎓 취업/실습 이력 ${hists.length>0?`<span style="font-size:12px;color:#94a3b8;font-weight:400;">(${hists.length}건)</span>`:''}</span>
         <button class="btn btn-sm btn-primary" onclick="openHistoryAdd()">+ 추가</button>
       </div>
       ${hists.length===0
         ?`<p style="font-size:13px;color:#94a3b8;">취업/실습 이력이 없습니다.</p>`
-        :hists.map(h=>`
+        :histItems.map(h=>`
           <div class="log-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div style="flex:1;">
@@ -380,17 +420,18 @@ function renderDetail(c) {
               </div>
             </div>
           </div>`).join('')}
+      ${detailPageHTML(histCur, histTotal, 'setHistPage')}
     </div>
 
     <!-- 연도별 담당교사 -->
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;color:#1e293b;">👨‍🏫 연도별 담당교사</span>
+        <span style="font-weight:700;font-size:14px;color:#1e293b;">👨‍🏫 연도별 담당교사 ${charges.length>0?`<span style="font-size:12px;color:#94a3b8;font-weight:400;">(${charges.length}건)</span>`:''}</span>
         <button class="btn btn-sm btn-primary" onclick="openChargeAdd()">+ 추가</button>
       </div>
       ${charges.length===0
         ?`<p style="font-size:13px;color:#94a3b8;">담당교사 기록이 없습니다.</p>`
-        :charges.map(ch=>`
+        :chargeItems.map(ch=>`
           <div class="log-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div style="flex:1;">
@@ -411,8 +452,29 @@ function renderDetail(c) {
               </div>
             </div>
           </div>`).join('')}
+      ${detailPageHTML(chargeCur, chargeTotal, 'setChargePage')}
     </div>
   </div>`;
+}
+
+/* ── 상세 섹션 페이지 이동 ── */
+function setLogPage(p) {
+  state.logPage = p;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  else render();
+}
+function setHistPage(p) {
+  state.histPage = p;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  else render();
+}
+function setChargePage(p) {
+  state.chargePage = p;
+  const detailEl = document.getElementById('company-detail-panel');
+  if (detailEl && state.selected) detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
+  else render();
 }
 
 /* ── 업체 등록 모달 ── */
@@ -899,6 +961,7 @@ async function selectCompany(id) {
   if (!c) return;
   state.selected = c;
   state.showContactAdd=false; state.showHistoryAdd=false;
+  state.logPage=1; state.histPage=1; state.chargePage=1;
   await Promise.all([loadContactLogs(id), loadHistories(id), loadCharges(id)]);
 
   // 우측 상세 패널만 업데이트 (페이지네이션 유지)
@@ -1214,32 +1277,20 @@ function renderChargeEditModal() {
 function openChargeAdd() {
   state.newCharge = { year: new Date().getFullYear(), teacher_name:'', department:'', note:'' };
   state.showChargeAdd = true;
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl && state.selected) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
-  } else { render(); }
+  render();
 }
 function closeChargeAdd() {
   state.showChargeAdd = false;
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl && state.selected) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
-  } else { render(); }
+  render();
 }
 function openChargeEdit(id, year, teacher_name, department, note) {
   state.editCharge = { id, year, teacher_name, department, note };
   state.showChargeEdit = true;
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl && state.selected) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
-  } else { render(); }
+  render();
 }
 function closeChargeEdit() {
   state.showChargeEdit = false;
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl && state.selected) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(state.selected)}`;
-  } else { render(); }
+  render();
 }
 
 async function submitChargeAdd() {
@@ -1251,10 +1302,7 @@ async function submitChargeAdd() {
   if (d.error) { alert(d.error); return; }
   state.showChargeAdd = false;
   await loadCharges(sel.id);
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
-  } else { render(); }
+  render();
 }
 
 async function submitChargeEdit() {
@@ -1266,10 +1314,7 @@ async function submitChargeEdit() {
   if (d.error) { alert(d.error); return; }
   state.showChargeEdit = false;
   await loadCharges(sel.id);
-  const detailEl = document.getElementById('company-detail-panel');
-  if (detailEl) {
-    detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
-  } else { render(); }
+  render();
 }
 
 async function deleteCharge(id) {
@@ -1279,10 +1324,7 @@ async function deleteCharge(id) {
   if (d.error) { alert(d.error); return; }
   if (sel) {
     await loadCharges(sel.id);
-    const detailEl = document.getElementById('company-detail-panel');
-    if (detailEl) {
-      detailEl.innerHTML = `<span style="font-weight:700;font-size:15px;">업체 상세</span>${renderDetail(sel)}`;
-    } else { render(); }
+    render();
   }
 }
 
