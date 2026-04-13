@@ -20,6 +20,11 @@ let state = {
   adminStats: null,
   adminError: '',
   resetTarget: null,
+  // 대시보드
+  dashboard: null,
+  dashYear: null,
+  dashYearData: null,
+  dashStudentDetail: null,
   resetPw: '',
   showResetModal: false,
   companies: [],
@@ -96,6 +101,20 @@ async function loadHistories(id) {
 async function loadCharges(id) {
   const d = await api('GET', `/companies/${id}/charges`);
   state.charges[id] = d.charges || [];
+}
+async function loadDashboard() {
+  const d = await api('GET', '/dashboard/summary');
+  state.dashboard = d;
+  state.dashYear = null;
+  state.dashYearData = null;
+  state.dashStudentDetail = null;
+}
+async function loadDashYear(year) {
+  state.dashYear = year;
+  state.dashStudentDetail = null;
+  const d = await api('GET', `/dashboard/year/${year}`);
+  state.dashYearData = d.students || [];
+  render();
 }
 async function loadAdminUsers() {
   const d = await api('GET', '/admin/users');
@@ -202,6 +221,7 @@ function renderHeader() {
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       ${isAdmin?`
         <button class="btn btn-sm ${state.page==='main'?'btn-primary':'btn-outline'}" onclick="goPage('main')">📋 업체관리</button>
+        <button class="btn btn-sm ${state.page==='dashboard'?'btn-primary':'btn-outline'}" onclick="goPage('dashboard')">📊 취업 대시보드</button>
         <button class="btn btn-sm ${state.page==='admin'?'btn-primary':'btn-outline'}" onclick="goPage('admin')">⚙️ 관리자</button>
       `:''}
       <div style="background:#eff6ff;padding:6px 12px;border-radius:8px;font-size:13px;color:#1e40af;font-weight:600;">
@@ -217,6 +237,7 @@ function renderHeader() {
 /* ── 메인 페이지 ── */
 function renderMain() {
   if (state.page === 'admin') return renderAdminPage();
+  if (state.page === 'dashboard') return renderDashboardPage();
   const filtered = getFiltered();
   const sel = state.selected;
   return `
@@ -1150,6 +1171,7 @@ async function deleteHistory(id) {
 function goPage(p) {
   state.page=p;
   if (p==='admin') { loadAdminUsers(); loadAdminStats(); }
+  if (p==='dashboard') { loadDashboard(); }
   render();
 }
 async function setAdminTab(t) {
@@ -1326,6 +1348,236 @@ async function deleteCharge(id) {
     await loadCharges(sel.id);
     render();
   }
+}
+
+/* ══════════════════════════════
+   취업 대시보드 페이지
+══════════════════════════════ */
+function renderDashboardPage() {
+  const db = state.dashboard;
+  const sel = state.dashYear;
+  const students = state.dashYearData || [];
+  const detail = state.dashStudentDetail;
+
+  // 연도 목록 추출
+  const years = db ? [...new Set((db.byYear||[]).map(r=>r.year))].sort((a,b)=>b-a) : [];
+
+  // 연도별 취업+실습 합계
+  const yearTotals = {};
+  if (db) {
+    (db.byYear||[]).forEach(r => {
+      if (!yearTotals[r.year]) yearTotals[r.year] = { total:0, 취업:0, 현장실습:0 };
+      yearTotals[r.year][r.type] = (yearTotals[r.year][r.type]||0) + r.cnt;
+      yearTotals[r.year].total += r.cnt;
+    });
+  }
+
+  // 차트 데이터
+  const chartYears = [...years].reverse().slice(-7); // 최근 7개년
+  const chartEmp   = chartYears.map(y => yearTotals[y]?.['취업']||0);
+  const chartInter = chartYears.map(y => yearTotals[y]?.['현장실습']||0);
+  const chartMax   = Math.max(...chartYears.map(y => yearTotals[y]?.total||0), 1);
+
+  // 학과별 집계 (선택 연도)
+  const deptMap = {};
+  students.forEach(s => {
+    if (!deptMap[s.department]) deptMap[s.department] = { 취업:0, 현장실습:0 };
+    deptMap[s.department][s.type] = (deptMap[s.department][s.type]||0) + 1;
+  });
+
+  return `
+  <div style="max-width:1300px;margin:0 auto;padding:24px 16px;display:grid;gap:20px;">
+    ${renderHeader()}
+
+    ${!db ? `<div class="card" style="padding:40px;text-align:center;color:#94a3b8;">데이터를 불러오는 중...</div>` : `
+
+    <!-- 요약 카드 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;">
+      ${years.slice(0,1).map(y=>`
+        <div class="card" style="padding:16px;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;">
+          <div style="font-size:12px;opacity:.85;">최근연도 (${y}년)</div>
+          <div style="font-size:28px;font-weight:800;margin:4px 0;">${yearTotals[y]?.total||0}</div>
+          <div style="font-size:12px;opacity:.8;">취업 ${yearTotals[y]?.['취업']||0} / 실습 ${yearTotals[y]?.['현장실습']||0}</div>
+        </div>`).join('')}
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;">
+        <div style="font-size:12px;opacity:.85;">전체 누적</div>
+        <div style="font-size:28px;font-weight:800;margin:4px 0;">${Object.values(yearTotals).reduce((s,v)=>s+v.total,0)}</div>
+        <div style="font-size:12px;opacity:.8;">취업+실습 합계</div>
+      </div>
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,#059669,#34d399);color:#fff;">
+        <div style="font-size:12px;opacity:.85;">기록된 연도</div>
+        <div style="font-size:28px;font-weight:800;margin:4px 0;">${years.length}</div>
+        <div style="font-size:12px;opacity:.8;">개년도 데이터</div>
+      </div>
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,#d97706,#fbbf24);color:#fff;">
+        <div style="font-size:12px;opacity:.85;">연계 업체 수</div>
+        <div style="font-size:28px;font-weight:800;margin:4px 0;">${[...new Set((db.byCompany||[]).map(r=>r.company_name))].length}</div>
+        <div style="font-size:12px;opacity:.8;">협력 업체</div>
+      </div>
+    </div>
+
+    <!-- 차트 + 연도별 표 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+      <!-- 막대 차트 -->
+      <div class="card" style="padding:20px;">
+        <div style="font-weight:700;font-size:15px;color:#1e293b;margin-bottom:16px;">📊 연도별 취업/실습 현황</div>
+        <div style="display:flex;align-items:flex-end;gap:10px;height:180px;padding-bottom:4px;overflow-x:auto;">
+          ${chartYears.map((y,i)=>{
+            const emp   = chartEmp[i];
+            const inter = chartInter[i];
+            const total = emp + inter;
+            const empH   = Math.round((emp/chartMax)*160);
+            const interH = Math.round((inter/chartMax)*160);
+            return `
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;cursor:pointer;"
+              onclick="loadDashYear(${y})">
+              <div style="font-size:11px;color:#374151;font-weight:600;">${total}</div>
+              <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:1px;height:160px;">
+                <div style="width:32px;height:${interH}px;background:#a78bfa;border-radius:3px 3px 0 0;" title="실습 ${inter}"></div>
+                <div style="width:32px;height:${empH}px;background:#3b82f6;border-radius:${interH?'0':'3px 3px'} 0 0;" title="취업 ${emp}"></div>
+              </div>
+              <div style="font-size:11px;color:#64748b;margin-top:3px;">${String(y).slice(2)}년</div>
+            </div>`}).join('')}
+        </div>
+        <div style="display:flex;gap:12px;margin-top:10px;justify-content:center;">
+          <span style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:4px;">
+            <span style="display:inline-block;width:12px;height:12px;background:#3b82f6;border-radius:2px;"></span>취업
+          </span>
+          <span style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:4px;">
+            <span style="display:inline-block;width:12px;height:12px;background:#a78bfa;border-radius:2px;"></span>현장실습
+          </span>
+        </div>
+      </div>
+
+      <!-- 연도별 요약 표 -->
+      <div class="card" style="padding:20px;">
+        <div style="font-weight:700;font-size:15px;color:#1e293b;margin-bottom:12px;">📅 연도별 집계 <span style="font-size:12px;color:#94a3b8;font-weight:400;">(클릭하면 상세 보기)</span></div>
+        <div style="overflow-y:auto;max-height:260px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="background:#f8fafc;">
+              <th style="padding:8px 10px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">연도</th>
+              <th style="padding:8px 10px;font-size:12px;color:#3b82f6;text-align:center;border-bottom:1px solid #e5e7eb;">취업</th>
+              <th style="padding:8px 10px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb;">현장실습</th>
+              <th style="padding:8px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #e5e7eb;">합계</th>
+            </tr></thead>
+            <tbody>
+              ${years.map(y=>`
+                <tr onclick="loadDashYear(${y})"
+                  style="cursor:pointer;background:${sel===y?'#eff6ff':'#fff'};transition:background .15s;"
+                  onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background='${sel===y?'#eff6ff':'#fff'}'">
+                  <td style="padding:8px 10px;font-size:13px;font-weight:${sel===y?700:400};color:#1e40af;border-bottom:1px solid #f1f5f9;">
+                    ${y}년 ${sel===y?'◀':''}
+                  </td>
+                  <td style="padding:8px 10px;font-size:13px;text-align:center;color:#3b82f6;font-weight:600;border-bottom:1px solid #f1f5f9;">${yearTotals[y]?.['취업']||0}</td>
+                  <td style="padding:8px 10px;font-size:13px;text-align:center;color:#7c3aed;font-weight:600;border-bottom:1px solid #f1f5f9;">${yearTotals[y]?.['현장실습']||0}</td>
+                  <td style="padding:8px 10px;font-size:13px;text-align:center;font-weight:700;border-bottom:1px solid #f1f5f9;">${yearTotals[y]?.total||0}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 선택 연도 상세 -->
+    ${sel ? `
+    <div class="card" style="padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <span style="font-weight:700;font-size:16px;color:#1e293b;">📋 ${sel}년도 현황</span>
+          <span style="font-size:13px;color:#64748b;margin-left:8px;">총 ${students.length}명</span>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="state.dashYear=null;state.dashYearData=null;state.dashStudentDetail=null;render();">✕ 닫기</button>
+      </div>
+
+      <!-- 학과별 소계 -->
+      ${Object.keys(deptMap).length>0?`
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        ${Object.entries(deptMap).map(([dept,counts])=>`
+          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font-size:12px;">
+            <span style="font-weight:600;color:#1e293b;">${esc(dept)}</span>
+            <span style="color:#3b82f6;margin-left:6px;">취업 ${counts['취업']||0}</span>
+            <span style="color:#7c3aed;margin-left:4px;">실습 ${counts['현장실습']||0}</span>
+          </div>`).join('')}
+      </div>`:''}
+
+      <!-- 졸업생 테이블 -->
+      <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:#f8fafc;">
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">학과</th>
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">이름</th>
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:center;border-bottom:1px solid #e5e7eb;">구분</th>
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">업체명</th>
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">업종</th>
+            <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">담당자</th>
+          </tr></thead>
+          <tbody>
+            ${students.length===0
+              ?`<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;">데이터가 없습니다.</td></tr>`
+              :students.map(s=>`
+                <tr onclick="showStudentDetail(${s.id})"
+                  style="cursor:pointer;background:${detail?.id===s.id?'#eff6ff':'#fff'};"
+                  onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background='${detail?.id===s.id?'#eff6ff':'#fff'}'">
+                  <td style="padding:9px 12px;font-size:13px;border-bottom:1px solid #f1f5f9;">${esc(s.department||'-')}</td>
+                  <td style="padding:9px 12px;font-size:13px;font-weight:600;color:#1e40af;border-bottom:1px solid #f1f5f9;">${esc(s.student||'-')}</td>
+                  <td style="padding:9px 12px;text-align:center;border-bottom:1px solid #f1f5f9;">
+                    <span class="badge badge-${s.type||'취업'}">${esc(s.type||'취업')}</span>
+                  </td>
+                  <td style="padding:9px 12px;font-size:13px;font-weight:600;border-bottom:1px solid #f1f5f9;">${esc(s.company_name||'-')}</td>
+                  <td style="padding:9px 12px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">${esc(s.industry||'-')}</td>
+                  <td style="padding:9px 12px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">${esc(s.manager_name||'-')}</td>
+                </tr>
+                ${detail?.id===s.id ? `
+                <tr style="background:#eff6ff;">
+                  <td colspan="6" style="padding:14px 18px;border-bottom:1px solid #dbeafe;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+                      <div><div class="info-label">업체 주소</div><div style="font-size:13px;">${esc(s.address||'-')}</div></div>
+                      <div><div class="info-label">업체 전화</div><div style="font-size:13px;">${esc(s.phone||'-')}</div></div>
+                      <div><div class="info-label">담당자 연락처</div><div style="font-size:13px;">${esc(s.manager_phone||'-')}</div></div>
+                      <div><div class="info-label">담당자 이메일</div><div style="font-size:13px;">${esc(s.manager_email||'-')}</div></div>
+                      <div><div class="info-label">작성자</div><div style="font-size:13px;">${esc(s.writer||'-')}</div></div>
+                      <div>
+                        <button class="btn btn-sm btn-outline" style="font-size:12px;"
+                          onclick="event.stopPropagation();goToCompany(${s.company_id})">🏢 업체 바로가기</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>` : ''}
+              `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : `
+    <div class="card" style="padding:24px;text-align:center;color:#94a3b8;font-size:14px;">
+      ⬆️ 위 차트나 연도를 클릭하면 해당 연도의 취업/실습 상세 현황을 볼 수 있습니다.
+    </div>`}
+    `}
+  </div>
+  <footer style="text-align:center;padding:32px 16px 24px;color:#94a3b8;font-size:13px;">
+    <div>© ${new Date().getFullYear()} Copyright by <strong style="color:#64748b;">김민성</strong></div>
+    <div style="margin-top:4px;">문의 이메일: <a href="mailto:anzel386@naver.com" style="color:#3b82f6;">anzel386@naver.com</a></div>
+  </footer>`;
+}
+
+function showStudentDetail(id) {
+  const students = state.dashYearData || [];
+  const s = students.find(x => x.id === id);
+  if (!s) return;
+  state.dashStudentDetail = state.dashStudentDetail?.id === id ? null : s;
+  render();
+}
+
+function goToCompany(companyId) {
+  goPage('main');
+  setTimeout(async () => {
+    const c = state.companies.find(x => x.id === companyId);
+    if (c) {
+      state.selected = c;
+      await Promise.all([loadContactLogs(companyId), loadHistories(companyId), loadCharges(companyId)]);
+      render();
+    }
+  }, 100);
 }
 
 init();

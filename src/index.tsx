@@ -539,4 +539,68 @@ app.delete('/api/charges/:id', async (c) => {
   return c.json({ message: '담당교사가 삭제되었습니다.' })
 })
 
+/* ════════════════════
+   취업 대시보드 API
+════════════════════ */
+
+// 연도 목록 + 연도별 집계
+app.get('/api/dashboard/summary', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+
+  // 연도별 취업/실습 건수
+  const byYear = await db.prepare(`
+    SELECT year, type, COUNT(*) as cnt
+    FROM employment_histories
+    GROUP BY year, type
+    ORDER BY year DESC
+  `).all()
+
+  // 학과별 취업/실습 건수 (전체)
+  const byDept = await db.prepare(`
+    SELECT department, type, COUNT(*) as cnt
+    FROM employment_histories
+    GROUP BY department, type
+    ORDER BY cnt DESC
+  `).all()
+
+  // 연도별 업체별 배치 수
+  const byCompany = await db.prepare(`
+    SELECT eh.year, c.name as company_name, COUNT(*) as cnt
+    FROM employment_histories eh
+    JOIN companies c ON eh.company_id = c.id
+    GROUP BY eh.year, c.id
+    ORDER BY eh.year DESC, cnt DESC
+  `).all()
+
+  return c.json({
+    byYear: byYear.results,
+    byDept: byDept.results,
+    byCompany: byCompany.results,
+  })
+})
+
+// 특정 연도의 졸업생 목록 (상세)
+app.get('/api/dashboard/year/:year', async (c) => {
+  const db = c.env.DB
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: '로그인이 필요합니다.' }, 401)
+
+  const year = c.req.param('year')
+  const students = await db.prepare(`
+    SELECT
+      eh.id, eh.year, eh.type, eh.department, eh.student, eh.writer,
+      eh.company_id, c.name as company_name,
+      c.industry, c.address, c.phone,
+      c.manager_name, c.manager_phone, c.manager_email
+    FROM employment_histories eh
+    JOIN companies c ON eh.company_id = c.id
+    WHERE eh.year = ?
+    ORDER BY eh.department, eh.student
+  `).bind(year).all()
+
+  return c.json({ students: students.results, year })
+})
+
 export default app
