@@ -25,6 +25,8 @@ let state = {
   dashYear: null,
   dashYearData: null,
   dashStudentDetail: null,
+  dashFilterDept: '전체',
+  dashFilterType: '전체',
   resetPw: '',
   showResetModal: false,
   companies: [],
@@ -112,8 +114,20 @@ async function loadDashboard() {
 async function loadDashYear(year) {
   state.dashYear = year;
   state.dashStudentDetail = null;
+  state.dashFilterDept = '전체';
+  state.dashFilterType = '전체';
   const d = await api('GET', `/dashboard/year/${year}`);
   state.dashYearData = d.students || [];
+  render();
+}
+function setDashFilterDept(v) {
+  state.dashFilterDept = v;
+  state.dashStudentDetail = null;
+  render();
+}
+function setDashFilterType(v) {
+  state.dashFilterType = v;
+  state.dashStudentDetail = null;
   render();
 }
 async function loadAdminUsers() {
@@ -1378,11 +1392,21 @@ function renderDashboardPage() {
   const chartInter = chartYears.map(y => yearTotals[y]?.['현장실습']||0);
   const chartMax   = Math.max(...chartYears.map(y => yearTotals[y]?.total||0), 1);
 
-  // 학과별 집계 (선택 연도)
+  // 학과별 집계 (선택 연도 전체 기준 - 필터 전)
   const deptMap = {};
   students.forEach(s => {
     if (!deptMap[s.department]) deptMap[s.department] = { 취업:0, 현장실습:0 };
     deptMap[s.department][s.type] = (deptMap[s.department][s.type]||0) + 1;
+  });
+  const depts = Object.keys(deptMap);
+  const filterDept = state.dashFilterDept || '전체';
+  const filterType = state.dashFilterType || '전체';
+
+  // 필터 적용된 목록
+  const filteredStudents = students.filter(s => {
+    const matchDept = filterDept === '전체' || s.department === filterDept;
+    const matchType = filterType === '전체' || s.type === filterType;
+    return matchDept && matchType;
   });
 
   return `
@@ -1482,24 +1506,48 @@ function renderDashboardPage() {
     <!-- 선택 연도 상세 -->
     ${sel ? `
     <div class="card" style="padding:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div>
           <span style="font-weight:700;font-size:16px;color:#1e293b;">📋 ${sel}년도 현황</span>
-          <span style="font-size:13px;color:#64748b;margin-left:8px;">총 ${students.length}명</span>
+          <span style="font-size:13px;color:#64748b;margin-left:8px;">총 ${students.length}명
+            ${filteredStudents.length !== students.length ? `<span style="color:#3b82f6;">(필터: ${filteredStudents.length}명)</span>` : ''}
+          </span>
         </div>
-        <button class="btn btn-sm btn-outline" onclick="state.dashYear=null;state.dashYearData=null;state.dashStudentDetail=null;render();">✕ 닫기</button>
+        <button class="btn btn-sm btn-outline" onclick="state.dashYear=null;state.dashYearData=null;state.dashStudentDetail=null;state.dashFilterDept='전체';state.dashFilterType='전체';render();">✕ 닫기</button>
       </div>
 
-      <!-- 학과별 소계 -->
-      ${Object.keys(deptMap).length>0?`
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-        ${Object.entries(deptMap).map(([dept,counts])=>`
-          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font-size:12px;">
-            <span style="font-weight:600;color:#1e293b;">${esc(dept)}</span>
-            <span style="color:#3b82f6;margin-left:6px;">취업 ${counts['취업']||0}</span>
-            <span style="color:#7c3aed;margin-left:4px;">실습 ${counts['현장실습']||0}</span>
-          </div>`).join('')}
-      </div>`:''}
+      <!-- 필터 바 -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:12px;background:#f8fafc;border-radius:10px;">
+        <!-- 구분 필터 -->
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span style="font-size:12px;color:#64748b;font-weight:600;">구분</span>
+          ${['전체','취업','현장실습'].map(t=>`
+            <button onclick="setDashFilterType('${t}')"
+              style="padding:4px 12px;border-radius:20px;border:1.5px solid ${filterType===t?'#1e40af':'#e5e7eb'};
+              background:${filterType===t?'#1e40af':'#fff'};color:${filterType===t?'#fff':'#374151'};
+              font-size:12px;font-weight:${filterType===t?700:400};cursor:pointer;">
+              ${t==='취업'?'🔵':t==='현장실습'?'🟣':'⚪'} ${t}
+              ${t!=='전체'?`<span style="opacity:.8;">(${t==='취업'?(yearTotals[sel]?.['취업']||0):(yearTotals[sel]?.['현장실습']||0)})</span>`:''}
+            </button>`).join('')}
+        </div>
+        <div style="width:1px;background:#e5e7eb;margin:0 4px;"></div>
+        <!-- 학과 필터 -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:12px;color:#64748b;font-weight:600;">학과</span>
+          <button onclick="setDashFilterDept('전체')"
+            style="padding:4px 12px;border-radius:20px;border:1.5px solid ${filterDept==='전체'?'#1e40af':'#e5e7eb'};
+            background:${filterDept==='전체'?'#1e40af':'#fff'};color:${filterDept==='전체'?'#fff':'#374151'};
+            font-size:12px;font-weight:${filterDept==='전체'?700:400};cursor:pointer;">전체</button>
+          ${depts.map(d=>`
+            <button onclick="setDashFilterDept('${esc(d)}')"
+              style="padding:4px 12px;border-radius:20px;border:1.5px solid ${filterDept===d?'#0ea5e9':'#e5e7eb'};
+              background:${filterDept===d?'#0ea5e9':'#fff'};color:${filterDept===d?'#fff':'#374151'};
+              font-size:12px;font-weight:${filterDept===d?700:400};cursor:pointer;">
+              ${esc(d)}
+              <span style="opacity:.75;">(${(deptMap[d]?.['취업']||0)+(deptMap[d]?.['현장실습']||0)})</span>
+            </button>`).join('')}
+        </div>
+      </div>
 
       <!-- 졸업생 테이블 -->
       <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
@@ -1513,9 +1561,9 @@ function renderDashboardPage() {
             <th style="padding:10px 12px;font-size:12px;color:#64748b;text-align:left;border-bottom:1px solid #e5e7eb;">담당자</th>
           </tr></thead>
           <tbody>
-            ${students.length===0
-              ?`<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;">데이터가 없습니다.</td></tr>`
-              :students.map(s=>`
+            ${filteredStudents.length===0
+              ?`<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;">해당하는 데이터가 없습니다.</td></tr>`
+              :filteredStudents.map(s=>`
                 <tr onclick="showStudentDetail(${s.id})"
                   style="cursor:pointer;background:${detail?.id===s.id?'#eff6ff':'#fff'};"
                   onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background='${detail?.id===s.id?'#eff6ff':'#fff'}'">
